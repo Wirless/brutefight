@@ -736,6 +736,19 @@ class EquipmentUI {
             this.handleSlotClick(slotName, isQuickSlot);
         });
         
+        // Add right-click handler for backpack slot
+        if (slotName === EQUIPMENT_SLOTS.BACKPACK) {
+            slotElement.addEventListener('contextmenu', (e) => {
+                e.preventDefault(); // Prevent default context menu
+                
+                const item = this.equipmentManager.slots[slotName];
+                if (item && item instanceof BagItem) {
+                    // Open the bag window
+                    item.open(e.clientX, e.clientY);
+                }
+            });
+        }
+        
         return slotElement;
     }
     
@@ -781,6 +794,17 @@ class EquipmentUI {
         // Add click handler
         slotElement.addEventListener('click', () => {
             this.handleSlotClick(slotName, true);
+        });
+        
+        // Add right-click handler
+        slotElement.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); // Prevent default context menu
+            
+            const item = this.equipmentManager.quickSlots[slotName];
+            if (item && item instanceof BagItem) {
+                // Open the bag window
+                item.open(e.clientX, e.clientY);
+            }
         });
         
         return slotElement;
@@ -1070,6 +1094,18 @@ const EQUIPMENT_EXAMPLES = {
         stats: { strength: 1 },
         rarity: 'common',
         level: 1
+    }),
+    
+    smallBag: new BagItem({
+        id: 'small_bag',
+        name: 'Small Bag',
+        description: 'A small bag with 8 inventory slots.',
+        slot: EQUIPMENT_SLOTS.BACKPACK,
+        color: '#8B4513',
+        icon: 'sprites/bag.png', // Add a bag sprite if available
+        slots: 8,
+        rarity: 'common',
+        level: 1
     })
 };
 
@@ -1078,6 +1114,8 @@ window.Equipment = {
     EQUIPMENT_SLOTS,
     QUICK_SLOTS,
     EquipmentItem,
+    BagItem,
+    BagWindowUI,
     EquipmentManager,
     EquipmentUI,
     EQUIPMENT_EXAMPLES
