@@ -111,6 +111,316 @@ class EquipmentItem {
     }
 }
 
+// Bag class that extends EquipmentItem
+class BagItem extends EquipmentItem {
+    constructor(options = {}) {
+        super(options);
+        this.slots = options.slots || 8; // Number of inventory slots
+        this.contents = new Array(this.slots).fill(null); // Contents of the bag
+        this.type = 'bag';
+        this.isOpen = false; // Whether the bag window is open
+        this.windowUI = null; // Reference to the bag window UI
+    }
+    
+    // Add an item to the bag
+    addItem(item, slotIndex) {
+        if (slotIndex >= 0 && slotIndex < this.slots) {
+            if (this.contents[slotIndex] === null) {
+                this.contents[slotIndex] = item;
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // Remove an item from the bag
+    removeItem(slotIndex) {
+        if (slotIndex >= 0 && slotIndex < this.slots && this.contents[slotIndex] !== null) {
+            const item = this.contents[slotIndex];
+            this.contents[slotIndex] = null;
+            return item;
+        }
+        return null;
+    }
+    
+    // Get an item from the bag without removing it
+    getItem(slotIndex) {
+        if (slotIndex >= 0 && slotIndex < this.slots) {
+            return this.contents[slotIndex];
+        }
+        return null;
+    }
+    
+    // Open the bag window
+    open(x, y) {
+        if (!this.isOpen) {
+            this.isOpen = true;
+            this.windowUI = new BagWindowUI(this, x, y);
+            return true;
+        }
+        return false;
+    }
+    
+    // Close the bag window
+    close() {
+        if (this.isOpen && this.windowUI) {
+            this.windowUI.close();
+            this.windowUI = null;
+            this.isOpen = false;
+            return true;
+        }
+        return false;
+    }
+}
+
+// Bag Window UI class
+class BagWindowUI {
+    constructor(bag, x, y) {
+        this.bag = bag;
+        this.x = x || 100;
+        this.y = y || 100;
+        this.width = 250;
+        this.height = 300;
+        this.isDragging = false;
+        this.dragOffsetX = 0;
+        this.dragOffsetY = 0;
+        this.slotElements = [];
+        
+        this.createWindow();
+    }
+    
+    createWindow() {
+        // Create the window container
+        this.container = document.createElement('div');
+        this.container.className = 'bag-window';
+        this.container.style.position = 'absolute';
+        this.container.style.left = `${this.x}px`;
+        this.container.style.top = `${this.y}px`;
+        this.container.style.width = `${this.width}px`;
+        this.container.style.height = `${this.height}px`;
+        this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.container.style.border = '2px solid #555';
+        this.container.style.borderRadius = '5px';
+        this.container.style.padding = '5px';
+        this.container.style.zIndex = '200'; // Higher than other UI elements
+        this.container.style.color = 'white';
+        this.container.style.fontFamily = 'Arial, sans-serif';
+        this.container.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.5)';
+        
+        // Create the header
+        const header = document.createElement('div');
+        header.className = 'bag-window-header';
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.padding = '5px';
+        header.style.borderBottom = '1px solid #555';
+        header.style.marginBottom = '10px';
+        header.style.cursor = 'move'; // Show move cursor on header
+        
+        // Add bag title
+        const title = document.createElement('div');
+        title.textContent = this.bag.name;
+        title.style.fontWeight = 'bold';
+        header.appendChild(title);
+        
+        // Add close button
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '✕';
+        closeButton.style.backgroundColor = 'transparent';
+        closeButton.style.border = 'none';
+        closeButton.style.color = 'white';
+        closeButton.style.fontSize = '16px';
+        closeButton.style.cursor = 'pointer';
+        closeButton.style.padding = '0 5px';
+        closeButton.addEventListener('click', () => this.bag.close());
+        header.appendChild(closeButton);
+        
+        // Make the header draggable
+        header.addEventListener('mousedown', (e) => {
+            this.isDragging = true;
+            this.dragOffsetX = e.clientX - this.container.offsetLeft;
+            this.dragOffsetY = e.clientY - this.container.offsetTop;
+            
+            // Prevent text selection during drag
+            e.preventDefault();
+        });
+        
+        // Add the header to the window
+        this.container.appendChild(header);
+        
+        // Create the slots container
+        const slotsContainer = document.createElement('div');
+        slotsContainer.className = 'bag-slots';
+        slotsContainer.style.display = 'grid';
+        slotsContainer.style.gridTemplateColumns = 'repeat(4, 1fr)'; // 4 slots per row
+        slotsContainer.style.gap = '5px';
+        slotsContainer.style.padding = '5px';
+        
+        // Create slots
+        for (let i = 0; i < this.bag.slots; i++) {
+            const slotElement = this.createSlotElement(i);
+            slotsContainer.appendChild(slotElement);
+            this.slotElements.push(slotElement);
+        }
+        
+        // Add the slots container to the window
+        this.container.appendChild(slotsContainer);
+        
+        // Add the window to the document
+        document.body.appendChild(this.container);
+        
+        // Add global mouse event listeners for dragging
+        document.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        
+        // Update the slots with current contents
+        this.updateAllSlots();
+    }
+    
+    createSlotElement(slotIndex) {
+        // Create slot container
+        const slotElement = document.createElement('div');
+        slotElement.className = `bag-slot slot-${slotIndex}`;
+        slotElement.dataset.slotIndex = slotIndex;
+        slotElement.style.width = '50px';
+        slotElement.style.height = '50px';
+        slotElement.style.backgroundColor = 'rgba(40, 40, 40, 0.8)';
+        slotElement.style.border = '1px solid #555';
+        slotElement.style.borderRadius = '3px';
+        slotElement.style.display = 'flex';
+        slotElement.style.justifyContent = 'center';
+        slotElement.style.alignItems = 'center';
+        slotElement.style.position = 'relative';
+        slotElement.style.cursor = 'pointer';
+        
+        // Add click handler
+        slotElement.addEventListener('click', () => {
+            this.handleSlotClick(slotIndex);
+        });
+        
+        return slotElement;
+    }
+    
+    handleSlotClick(slotIndex) {
+        console.log(`Clicked on bag slot ${slotIndex}`);
+        
+        // Get the item in this slot
+        const item = this.bag.getItem(slotIndex);
+        
+        if (item) {
+            // For now, just remove the item
+            const removedItem = this.bag.removeItem(slotIndex);
+            console.log(`Removed ${removedItem.name} from bag slot ${slotIndex}`);
+            
+            // Update the slot
+            this.updateSlot(slotIndex);
+        } else {
+            // In a real implementation, this would allow adding an item from inventory
+            console.log(`Bag slot ${slotIndex} is empty`);
+        }
+    }
+    
+    updateSlot(slotIndex) {
+        const slotElement = this.slotElements[slotIndex];
+        if (!slotElement) return;
+        
+        // Clear the slot
+        slotElement.innerHTML = '';
+        
+        // Get the item in this slot
+        const item = this.bag.getItem(slotIndex);
+        
+        if (item) {
+            // Create item representation
+            const itemElement = document.createElement('div');
+            itemElement.style.width = '40px';
+            itemElement.style.height = '40px';
+            itemElement.style.backgroundColor = item.color;
+            itemElement.style.border = `2px solid ${item.getRarityColor()}`;
+            itemElement.style.borderRadius = '3px';
+            
+            // If there's an icon, use it
+            if (item.icon) {
+                const iconImg = document.createElement('img');
+                iconImg.src = item.icon;
+                iconImg.style.width = '100%';
+                iconImg.style.height = '100%';
+                iconImg.style.objectFit = 'contain';
+                
+                // Handle image loading errors
+                iconImg.onerror = () => {
+                    console.warn(`Failed to load icon: ${item.icon}`);
+                    iconImg.style.display = 'none';
+                    itemElement.textContent = item.name.charAt(0);
+                    itemElement.style.display = 'flex';
+                    itemElement.style.justifyContent = 'center';
+                    itemElement.style.alignItems = 'center';
+                    itemElement.style.color = 'white';
+                    itemElement.style.fontWeight = 'bold';
+                };
+                
+                itemElement.appendChild(iconImg);
+            } else {
+                // Otherwise show first letter of item name
+                itemElement.textContent = item.name.charAt(0);
+                itemElement.style.display = 'flex';
+                itemElement.style.justifyContent = 'center';
+                itemElement.style.alignItems = 'center';
+                itemElement.style.color = 'white';
+                itemElement.style.fontWeight = 'bold';
+            }
+            
+            // Add tooltip
+            slotElement.title = `${item.name}\n${item.description}`;
+            
+            // Add the item element to the slot
+            slotElement.appendChild(itemElement);
+        } else {
+            // Empty slot
+            slotElement.title = '';
+        }
+    }
+    
+    updateAllSlots() {
+        for (let i = 0; i < this.bag.slots; i++) {
+            this.updateSlot(i);
+        }
+    }
+    
+    handleMouseMove(e) {
+        if (this.isDragging) {
+            const newX = e.clientX - this.dragOffsetX;
+            const newY = e.clientY - this.dragOffsetY;
+            
+            // Keep the window within the viewport
+            const maxX = window.innerWidth - this.width;
+            const maxY = window.innerHeight - this.height;
+            
+            this.x = Math.max(0, Math.min(newX, maxX));
+            this.y = Math.max(0, Math.min(newY, maxY));
+            
+            this.container.style.left = `${this.x}px`;
+            this.container.style.top = `${this.y}px`;
+        }
+    }
+    
+    handleMouseUp() {
+        this.isDragging = false;
+    }
+    
+    close() {
+        // Remove event listeners
+        document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
+        document.removeEventListener('mouseup', this.handleMouseUp.bind(this));
+        
+        // Remove the window from the document
+        if (this.container && this.container.parentNode) {
+            this.container.parentNode.removeChild(this.container);
+        }
+    }
+}
+
 // Equipment Manager class
 class EquipmentManager {
     constructor(player) {
@@ -220,6 +530,12 @@ class EquipmentManager {
             
             // Get the item in the active slot
             const item = this.quickSlots[slotName];
+            
+            // Update the global selectedTool variable if it exists
+            if (window.selectedTool !== undefined) {
+                window.selectedTool = item;
+            }
+            
             if (item) {
                 console.log(`Activated ${item.name} from quick slot ${key}`);
                 return item;
@@ -503,21 +819,26 @@ class EquipmentUI {
             ? this.equipmentManager.quickSlots[slotName] 
             : this.equipmentManager.slots[slotName];
         
-        if (item) {
-            // For now, just toggle equip/unequip
-            if (isQuickSlot) {
-                this.equipmentManager.unequipItem(slotName);
-                
-                // If this was the active slot, update active slot visualization
-                if (slotName === this.equipmentManager.activeQuickSlot) {
-                    this.updateActiveQuickSlot();
+        if (isQuickSlot) {
+            // For quickslots, we want to select the item, not unequip it
+            if (item) {
+                // Set this as the active quickslot
+                const key = Object.keys(QUICK_SLOTS).find(k => QUICK_SLOTS[k] === slotName);
+                if (key) {
+                    this.equipmentManager.setActiveQuickSlot(key);
+                    console.log(`Selected ${item.name} from quick slot ${key}`);
                 }
             } else {
-                this.equipmentManager.unequipItem(slotName);
+                console.log(`Quick slot ${slotName} is empty`);
             }
         } else {
-            // In a real implementation, this would open inventory to select an item
-            console.log(`No item to equip in ${slotName} slot`);
+            // For regular equipment slots, we can toggle equip/unequip
+            if (item) {
+                this.equipmentManager.unequipItem(slotName);
+            } else {
+                // In a real implementation, this would open inventory to select an item
+                console.log(`No item to equip in ${slotName} slot`);
+            }
         }
     }
     
@@ -555,6 +876,20 @@ class EquipmentUI {
                     iconImg.style.width = '100%';
                     iconImg.style.height = '100%';
                     iconImg.style.objectFit = 'contain';
+                    
+                    // Handle image loading errors
+                    iconImg.onerror = () => {
+                        console.warn(`Failed to load icon: ${item.icon}`);
+                        // Fallback to showing first letter of item name
+                        iconImg.style.display = 'none';
+                        itemIcon.textContent = item.name.charAt(0);
+                        itemIcon.style.display = 'flex';
+                        itemIcon.style.justifyContent = 'center';
+                        itemIcon.style.alignItems = 'center';
+                        itemIcon.style.color = 'white';
+                        itemIcon.style.fontWeight = 'bold';
+                    };
+                    
                     itemIcon.appendChild(iconImg);
                 } else {
                     // Otherwise show first letter of item name
@@ -584,7 +919,6 @@ class EquipmentUI {
                 slotElement.style.border = '1px solid #555';
                 slotElement.style.boxShadow = 'none';
             }
-            
         } else {
             // Update regular equipment slot
             const itemNameElement = slotElement.querySelector('.slot-item-name');
@@ -696,6 +1030,7 @@ const EQUIPMENT_EXAMPLES = {
         description: 'A basic wooden pickaxe for mining rocks.',
         type: 'tool',
         color: '#A0522D',
+        icon: 'sprites/pickaxe_placeholder.png', // Placeholder image for pickaxe
         stats: { strength: 1 },
         rarity: 'common',
         level: 1
@@ -707,6 +1042,7 @@ const EQUIPMENT_EXAMPLES = {
         description: 'A sturdy stone pickaxe for mining rocks more efficiently.',
         type: 'tool',
         color: '#808080',
+        icon: 'sprites/pickaxe_placeholder.png', // Placeholder image for pickaxe
         stats: { strength: 2 },
         rarity: 'common',
         level: 1
@@ -718,6 +1054,7 @@ const EQUIPMENT_EXAMPLES = {
         description: 'A durable iron pickaxe for mining rocks efficiently.',
         type: 'tool',
         color: '#C0C0C0',
+        icon: 'sprites/pickaxe_placeholder.png', // Placeholder image for pickaxe
         stats: { strength: 3 },
         rarity: 'uncommon',
         level: 5
@@ -729,6 +1066,7 @@ const EQUIPMENT_EXAMPLES = {
         description: 'A basic wooden axe for chopping trees.',
         type: 'tool',
         color: '#8B4513',
+        icon: 'sprites/axe.png', // Use the provided axe sprite
         stats: { strength: 1 },
         rarity: 'common',
         level: 1

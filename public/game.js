@@ -113,6 +113,9 @@ let rockParticles = [];
 let equipmentManager = null;
 let selectedTool = null;
 
+// Change from a local variable to a global one
+window.selectedTool = null;
+
 // Generate grass patterns (pre-rendered grass patterns for performance)
 function generateGrassPatterns() {
     for (let i = 0; i < 5; i++) {
@@ -581,17 +584,24 @@ socket.on('loginSuccess', (data) => {
     // Initialize equipment manager
     equipmentManager = new window.Equipment.EquipmentManager(myPlayer);
     
-    // Add some example tools to quick slots
-    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenPickaxe, window.Equipment.QUICK_SLOTS['1']);
-    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe, window.Equipment.QUICK_SLOTS['2']);
-    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.ironPickaxe, window.Equipment.QUICK_SLOTS['3']);
-    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe, window.Equipment.QUICK_SLOTS['4']);
+    // Equip the small bag in the backpack slot
+    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.smallBag, window.Equipment.EQUIPMENT_SLOTS.BACKPACK);
     
-    // Set the active quick slot to 1
+    // Add some example items to the bag
+    const bag = equipmentManager.slots[window.Equipment.EQUIPMENT_SLOTS.BACKPACK];
+    if (bag && bag instanceof window.Equipment.BagItem) {
+        // Add a stone pickaxe to the first slot of the bag
+        bag.addItem(window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe, 0);
+        
+        // Add a wooden axe to the second slot of the bag
+        bag.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe, 1);
+    }
+    
+    // Set the active quick slot to 1 (pickaxe)
     equipmentManager.setActiveQuickSlot('1');
     
     // Set the selected tool
-    selectedTool = equipmentManager.getActiveQuickSlotItem();
+    window.selectedTool = equipmentManager.getActiveQuickSlotItem();
 });
 
 socket.on('playerList', (playersData) => {
@@ -711,6 +721,9 @@ document.addEventListener('DOMContentLoaded', function() {
         playersList.style.zIndex = '99';
         playersList.style.display = 'none'; // Hidden by default
     }
+    
+    // Preload sprites
+    preloadSprites();
 });
 
 // Update the checkRockCollisions function to use ores
@@ -1207,4 +1220,29 @@ function preloadSounds() {
 }
 
 // Call preloadSounds during initialization
-preloadSounds(); 
+preloadSounds();
+
+// Add this function to preload sprites
+function preloadSprites() {
+    const sprites = [
+        'sprites/axe.png',
+        'sprites/pickaxe_placeholder.png'
+    ];
+    
+    console.log('Preloading sprites...');
+    
+    sprites.forEach(spritePath => {
+        const img = new Image();
+        img.src = spritePath;
+        img.onload = () => console.log(`Loaded sprite: ${spritePath}`);
+        img.onerror = () => console.warn(`Failed to load sprite: ${spritePath}`);
+    });
+}
+
+// Call this function during initialization
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing code ...
+    
+    // Preload sprites
+    preloadSprites();
+}); 
