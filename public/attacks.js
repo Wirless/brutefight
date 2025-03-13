@@ -249,6 +249,12 @@ class PickaxeAttack extends Attack {
                 // Ore is hit! This will also release a small experience orb
                 const destroyed = ore.hit(damage);
                 
+                // Add mining experience for hitting the rock
+                if (window.skillsManager) {
+                    // Add 1 experience point for each hit
+                    window.skillsManager.addExperience('mining', 1);
+                }
+                
                 // Play hit sound
                 this.playHitSound();
                 
@@ -262,6 +268,12 @@ class PickaxeAttack extends Attack {
                 if (destroyed) {
                     const drops = ore.getDrops ? ore.getDrops() : [];
                     console.log(`Ore destroyed! Drops:`, drops);
+                    
+                    // Add bonus mining experience for destroying the rock
+                    if (window.skillsManager) {
+                        // Add 5 bonus experience points for destroying the rock
+                        window.skillsManager.addExperience('mining', 5);
+                    }
                     
                     // Create experience orbs for destruction
                     if (window.expOrbManager && drops.experience) {

@@ -196,6 +196,14 @@ io.on('connection', (socket) => {
           capacity: 100, // Base capacity
           resources: {
             rocks: 0
+          },
+          // Add skills
+          skills: {
+            mining: {
+              level: 1,
+              experience: 0,
+              maxExperience: 100 // Level 1 requires 100 hits
+            }
           }
         };
         console.log(`Created new player ${username}`);
@@ -305,10 +313,16 @@ io.on('connection', (socket) => {
       if (data.maxExperience !== undefined) players[socket.username].maxExperience = data.maxExperience;
       if (data.capacity !== undefined) players[socket.username].capacity = data.capacity;
       if (data.resources !== undefined) players[socket.username].resources = data.resources;
+      if (data.skills !== undefined) players[socket.username].skills = data.skills;
       
       // Save the updated player data
       savePlayerToAccount(socket.username);
       console.log(`Updated player data for ${socket.username} (Level: ${players[socket.username].level}, XP: ${players[socket.username].experience})`);
+      
+      // Log skills data if available
+      if (data.skills && data.skills.mining) {
+        console.log(`Mining skill: Level ${data.skills.mining.level}, XP: ${data.skills.mining.experience}/${data.skills.mining.maxExperience}`);
+      }
     }
   });
 });

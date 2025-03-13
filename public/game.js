@@ -107,6 +107,7 @@ window.selectedTool = null;
 
 // Add to the global variables section
 let expOrbManager = null;
+let skillsManager = null;
 
 // Generate grass patterns (pre-rendered grass patterns for performance)
 function generateGrassPatterns() {
@@ -423,6 +424,13 @@ window.addEventListener('keydown', function(e) {
             setTimeout(() => {
                 updateDebugInfo();
             }, 2000);
+        }
+    }
+    
+    // Toggle skills window with 'K' key
+    if (key === 'k' && !isChatFocused) {
+        if (window.skillsManager) {
+            window.skillsManager.toggleWindow();
         }
     }
 });
@@ -1256,6 +1264,10 @@ function initGame() {
     // Initialize player progression system
     const playerProgression = new window.PlayerProgression(myPlayer);
     window.playerProgression = playerProgression;
+    
+    // Initialize skills manager
+    skillsManager = new window.SkillsManager(myPlayer);
+    window.skillsManager = skillsManager;
     
     // Add some example items to inventory
     playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenPickaxe);
