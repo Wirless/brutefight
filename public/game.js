@@ -1192,6 +1192,65 @@ function handleAttack(e) {
                         const drops = ore.getDrops ? ore.getDrops() : [];
                         console.log(`Ore destroyed! Drops:`, drops);
                         
+                        // Add resources and experience to player
+                        if (window.playerProgression && drops) {
+                            // Add experience
+                            if (drops.experience) {
+                                window.playerProgression.addExperience(drops.experience);
+                                
+                                // Add message about experience
+                                addChatMessage({
+                                    type: 'system',
+                                    message: `You gained ${drops.experience} experience from mining.`
+                                });
+                            }
+                            
+                            // Add resources to inventory or player
+                            if (drops.resources && drops.resources.length > 0) {
+                                for (const resource of drops.resources) {
+                                    // Try to add directly to player resources
+                                    const result = window.playerProgression.addResource(resource.type, resource.amount);
+                                    
+                                    // If player's inventory is full, try to add to inventory
+                                    if (result.capacityExceeded && result.remaining > 0 && window.playerInventory) {
+                                        // Create a new BagItem for the inventory
+                                        const resourceItem = new window.Equipment.BagItem({
+                                            name: resource.name || resource.type,
+                                            description: resource.description || `${resource.type} resource`,
+                                            type: 'resource',
+                                            icon: resource.icon,
+                                            value: 1,
+                                            stackable: true,
+                                            count: result.remaining,
+                                            isResource: true
+                                        });
+                                        
+                                        // Try to add to inventory
+                                        const slotIndex = window.playerInventory.addItem(resourceItem);
+                                        
+                                        if (slotIndex === -1) {
+                                            // Couldn't add to inventory either
+                                            addChatMessage({
+                                                type: 'system',
+                                                message: `You couldn't carry all the ${resource.name || resource.type}!`
+                                            });
+                                        } else {
+                                            addChatMessage({
+                                                type: 'system',
+                                                message: `${result.remaining} ${resource.name || resource.type} added to inventory.`
+                                            });
+                                        }
+                                    } else if (!result.capacityExceeded) {
+                                        // Successfully added to player resources
+                                        addChatMessage({
+                                            type: 'system',
+                                            message: `You collected ${result.added} ${resource.name || resource.type}.`
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        
                         // Remove the ore from the manager
                         oreManager.removeOre(ore);
                     }
@@ -1245,6 +1304,10 @@ function initGame() {
     
     // Connect inventory to equipment manager
     equipmentManager.setInventory(playerInventory);
+    
+    // Initialize player progression system
+    const playerProgression = new window.PlayerProgression(myPlayer);
+    window.playerProgression = playerProgression;
     
     // Add some example items to inventory
     playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenPickaxe);

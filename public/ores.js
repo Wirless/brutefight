@@ -20,6 +20,7 @@ class Ore {
         this.isHit = false;
         this.lastHitTime = 0;
         this.hitDuration = 500; // ms
+        this.experience = options.experience || 10; // Experience awarded when mined
         this.generateShape();
     }
     
@@ -203,9 +204,19 @@ class Ore {
     }
     
     getDrops() {
-        // Base method for getting resource drops
-        // To be implemented by subclasses
-        return [];
+        // Stone drops stone resources
+        return {
+            resources: [
+                {
+                    type: 'rocks',
+                    amount: 1 + Math.floor(Math.random() * 3),
+                    name: 'Rock',
+                    description: 'A common rock mined from stone.',
+                    icon: 'rock-svg'
+                }
+            ],
+            experience: this.experience
+        };
     }
     
     checkCollision(x, y, radius) {
@@ -237,7 +248,8 @@ class Stone extends Ore {
             width: options.width || 30 + Math.random() * 20,
             height: options.height || 45 + Math.random() * 35,
             health: options.health || 100, // Fixed 100 health for all stones
-            color: options.color || Stone.getRandomStoneColor()
+            color: options.color || Stone.getRandomStoneColor(),
+            experience: options.experience || 10
         };
         
         super(x, y, stoneOptions);
@@ -387,13 +399,18 @@ class Stone extends Ore {
     }
     
     getDrops() {
-        // Stone drops stone resources
-        return [
-            {
-                type: 'stone',
-                amount: 1 + Math.floor(Math.random() * 3)
-            }
-        ];
+        return {
+            resources: [
+                {
+                    type: 'rocks',
+                    amount: 1 + Math.floor(Math.random() * 3),
+                    name: 'Stone',
+                    description: 'A common rock mined from stone.',
+                    icon: 'rock-svg'
+                }
+            ],
+            experience: this.experience
+        };
     }
 }
 
@@ -401,4 +418,16 @@ class Stone extends Ore {
 window.Ores = {
     Ore,
     Stone
+};
+
+// Define SVG icons for resources
+window.ResourceIcons = {
+    'rock-svg': `<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+        <path d="M20.5,9.5 L12,4 L3.5,9.5 L3.5,14.5 L12,20 L20.5,14.5 Z" 
+              stroke="#333" stroke-width="1" fill="#777"/>
+        <path d="M7,10 L10,12 L8,14 L5,13 Z" 
+              stroke="#333" stroke-width="0.5" fill="#999"/>
+        <path d="M14,11 L17,10 L16,14 L13,15 Z" 
+              stroke="#333" stroke-width="0.5" fill="#999"/>
+    </svg>`
 };
