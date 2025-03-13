@@ -116,6 +116,66 @@ let selectedTool = null;
 // Change from a local variable to a global one
 window.selectedTool = null;
 
+// At the top of the file with other global variables, keep this one:
+let attackCooldown = 0;
+let attackAnimationDuration = 0;
+
+let currentAttackType = 'fist';
+let chatInputFocused = false; // Keep only this declaration
+
+// Define attack types and properties
+const ATTACK_TYPES = {
+    FIST: 'fist',
+    PICKAXE: 'pickaxe',
+    AXE: 'axe',
+    SWORD: 'sword',
+    STAFF: 'staff'
+};
+
+// Define attack properties
+const ATTACK_PROPERTIES = {
+    [ATTACK_TYPES.FIST]: {
+        damage: 5,
+        range: 50,
+        cooldown: 400,
+        animationDuration: 300,
+        sound: 'punch',
+        emoji: '👊'
+    },
+    [ATTACK_TYPES.PICKAXE]: {
+        damage: 15,
+        range: 80,
+        cooldown: 800,
+        animationDuration: 500,
+        sound: 'attack',
+        emoji: '⛏️'
+    },
+    [ATTACK_TYPES.AXE]: {
+        damage: 20,
+        range: 70,
+        cooldown: 700,
+        animationDuration: 450,
+        sound: 'attack',
+        emoji: '🪓'
+    },
+    [ATTACK_TYPES.SWORD]: {
+        damage: 25,
+        range: 90,
+        cooldown: 600,
+        animationDuration: 400,
+        sound: 'slash',
+        emoji: '🗡️'
+    },
+    [ATTACK_TYPES.STAFF]: {
+        damage: 10,
+        range: 120,
+        cooldown: 1000,
+        animationDuration: 600,
+        sound: 'magic',
+        emoji: '🪄'
+    }
+};
+
 // Generate grass patterns (pre-rendered grass patterns for performance)
 function generateGrassPatterns() {
     for (let i = 0; i < 5; i++) {
@@ -212,6 +272,7 @@ try {
 
 // Chat event listeners
 chatInput.addEventListener('focus', () => {
+    chatInputFocused = true;
     console.log('Chat input focused');
     isChatFocused = true;
     chatInput.style.outline = '2px solid rgb(255, 100, 100)';
@@ -219,6 +280,7 @@ chatInput.addEventListener('focus', () => {
 });
 
 chatInput.addEventListener('blur', () => {
+    chatInputFocused = false;
     console.log('Chat input blurred');
     isChatFocused = false;
     chatInput.style.outline = '2px solid rgb(0, 233, 150)';
@@ -385,26 +447,6 @@ canvas.addEventListener('mousemove', (e) => {
     // Calculate mouse position relative to canvas
     mouseX = e.clientX - rect.left;
     mouseY = e.clientY - rect.top;
-});
-
-// Add mouse click for attack
-canvas.addEventListener('mousedown', (e) => {
-    // Only handle left mouse button (button 0)
-    if (e.button === 0 && !isChatFocused && currentAttack) {
-        // Calculate attack direction based on mouse position
-        const playerScreenX = myPlayer.x - Math.floor(cameraX);
-        const playerScreenY = myPlayer.y - Math.floor(cameraY);
-        const direction = Math.atan2(mouseY - playerScreenY, mouseX - playerScreenX);
-        
-        // Perform attack
-        if (currentAttack.start(direction)) {
-            // Add attack message to chat
-            addChatMessage({
-                type: 'system',
-                message: `${username} swings their ${currentAttack === availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
-            });
-        }
-    }
 });
 
 // Setup keyboard events for smoother movement
@@ -581,27 +623,54 @@ socket.on('loginSuccess', (data) => {
     };
     currentAttack = availableAttacks.pickaxe; // Default attack
     
-    // Initialize equipment manager
-    equipmentManager = new window.Equipment.EquipmentManager(myPlayer);
-    
-    // Equip the small bag in the backpack slot
-    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.smallBag, window.Equipment.EQUIPMENT_SLOTS.BACKPACK);
-    
-    // Add some example items to the bag
-    const bag = equipmentManager.slots[window.Equipment.EQUIPMENT_SLOTS.BACKPACK];
-    if (bag && bag instanceof window.Equipment.BagItem) {
-        // Add a stone pickaxe to the first slot of the bag
-        bag.addItem(window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe, 0);
+    // Initialize equipment system if not already done
+    if (!window.Equipment) {
+        console.error('Equipment system not loaded!');
+    } else {
+        console.log('Initializing equipment system...');
         
-        // Add a wooden axe to the second slot of the bag
-        bag.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe, 1);
+        // Make sure QUICK_SLOTS is defined
+        if (!window.Equipment.QUICK_SLOTS) {
+            console.error('QUICK_SLOTS not defined in Equipment system');
+            // Define it if missing
+            window.Equipment.QUICK_SLOTS = {
+                SLOT_1: 'quickSlot0',
+                SLOT_2: 'quickSlot1',
+                SLOT_3: 'quickSlot2',
+                SLOT_4: 'quickSlot3',
+                SLOT_5: 'quickSlot4'
+            };
+        }
+        
+        // Create equipment manager and UI
+        window.equipmentManager = new window.Equipment.EquipmentManager();
+        window.equipmentUI = new window.Equipment.EquipmentUI(window.equipmentManager);
+        
+        // Wait for UI to be fully created before equipping items
+        setTimeout(() => {
+            // Add some example equipment
+            const pickaxe = window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe;
+            const axe = window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe;
+            const bag = window.Equipment.EQUIPMENT_EXAMPLES.smallBag;
+            
+            if (pickaxe && axe && bag) {
+                console.log('Equipping items...');
+                console.log('QUICK_SLOTS:', window.Equipment.QUICK_SLOTS);
+                
+                // Equip items
+                window.equipmentManager.equipItem(pickaxe, window.Equipment.QUICK_SLOTS.SLOT_1);
+                window.equipmentManager.equipItem(axe, window.Equipment.QUICK_SLOTS.SLOT_2);
+                window.equipmentManager.equipItem(bag, window.Equipment.EQUIPMENT_SLOTS.BACKPACK);
+                
+                // Set the first quickslot as active
+                window.equipmentManager.setActiveQuickSlot(window.Equipment.QUICK_SLOTS.SLOT_1);
+                
+                console.log('Equipment initialized successfully');
+            } else {
+                console.error('Failed to create example equipment items');
+            }
+        }, 100); // Short delay to ensure UI is ready
     }
-    
-    // Set the active quick slot to 1 (pickaxe)
-    equipmentManager.setActiveQuickSlot('1');
-    
-    // Set the selected tool
-    window.selectedTool = equipmentManager.getActiveQuickSlotItem();
 });
 
 socket.on('playerList', (playersData) => {
@@ -1245,4 +1314,60 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Preload sprites
     preloadSprites();
-}); 
+});
+
+// Update the performAttack function
+function performAttack() {
+    // Check if chat is focused
+    const chatInput = document.getElementById('chatInput');
+    chatInputFocused = chatInput ? document.activeElement === chatInput : false;
+    
+    // Don't attack if chat is focused
+    if (chatInputFocused) {
+        return false;
+    }
+    
+    // Get the active hand item
+    const activeItem = window.equipmentManager?.getActiveHandItem();
+    
+    // Determine attack type based on the equipped item
+    let attackType = ATTACK_TYPES.FIST; // Default to fist
+    
+    if (activeItem) {
+        const itemName = activeItem.name.toLowerCase();
+        if (itemName.includes('pickaxe')) attackType = ATTACK_TYPES.PICKAXE;
+        else if (itemName.includes('axe')) attackType = ATTACK_TYPES.AXE;
+        else if (itemName.includes('sword')) attackType = ATTACK_TYPES.SWORD;
+        else if (itemName.includes('staff') || itemName.includes('wand')) attackType = ATTACK_TYPES.STAFF;
+    }
+    
+    // Get attack properties
+    const attackProps = ATTACK_PROPERTIES[attackType];
+    
+    // Check if attack is on cooldown
+    if (attackCooldown > 0) {
+        return false;
+    }
+    
+    // Set attack cooldown
+    attackCooldown = attackProps.cooldown;
+    
+    // Set attack animation duration
+    attackAnimationDuration = attackProps.animationDuration;
+    
+    // Calculate attack direction based on mouse position
+    const mouseX = mousePos.x - canvas.width / 2;
+    const mouseY = mousePos.y - canvas.height / 2;
+    attackDirection = Math.atan2(mouseY, mouseX);
+    
+    // Set current attack type
+    currentAttackType = attackType;
+    
+    // Play attack sound
+    playSound(attackProps.sound);
+    
+    // Check for attack collisions
+    checkAttackCollisions(attackType, attackProps);
+    
+    return true;
+} 
