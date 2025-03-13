@@ -6,18 +6,24 @@ class ExperienceOrb {
         this.x = x;
         this.y = y;
         this.amount = amount;
-        this.radius = 5 + Math.random() * 3;
+        
+        // Scale the radius based on experience amount
+        // Base size is 5, with larger orbs for more experience
+        const sizeMultiplier = Math.min(2.5, 1 + (amount / 10)); // Cap at 2.5x size
+        this.radius = (5 + Math.random() * 3) * sizeMultiplier;
+        
         this.collected = false;
         this.collectRadius = 50; // Initial collection radius
         
-        // Visual properties
-        this.color = 'rgb(0, 255, 100)';
+        // Visual properties - adjust color based on amount
+        const greenIntensity = Math.min(255, 200 + (amount * 5));
+        this.color = `rgb(0, ${greenIntensity}, 100)`;
         this.opacity = 0.7 + Math.random() * 0.3;
-        this.glowSize = 3;
+        this.glowSize = 3 * sizeMultiplier;
         
-        // Movement properties
-        this.speed = 0.1 + Math.random() * 0.2;
-        this.maxSpeed = 7;
+        // Movement properties - larger orbs move a bit slower
+        this.speed = (0.1 + Math.random() * 0.2) / Math.sqrt(sizeMultiplier);
+        this.maxSpeed = 7 / Math.sqrt(sizeMultiplier);
         this.acceleration = 1.05;
         this.vx = 0;
         this.vy = 0;
@@ -224,16 +230,44 @@ class ExperienceOrbManager {
     
     createOrbBurst(x, y, count, totalAmount) {
         const orbs = [];
-        const amountPerOrb = Math.max(1, Math.floor(totalAmount / count));
         
+        // Create a distribution of experience amounts
+        // Make some orbs larger than others for visual appeal
+        let remainingExp = totalAmount;
+        let remainingOrbs = count;
+        
+        // Create orbs in a circular pattern
         for (let i = 0; i < count; i++) {
-            // Distribute the experience evenly, with any remainder going to the last orb
-            let amount = (i === count - 1) ? 
-                totalAmount - (amountPerOrb * (count - 1)) : 
-                amountPerOrb;
+            // Calculate how much experience this orb should get
+            let orbExp;
+            
+            if (i === count - 1) {
+                // Last orb gets all remaining experience
+                orbExp = remainingExp;
+            } else {
+                // Randomize experience distribution
+                // Larger orbs for more visual appeal
+                const avgExpPerOrb = remainingExp / remainingOrbs;
                 
-            const orb = this.createOrb(x, y, amount);
+                if (i === 0 && count > 2) {
+                    // Make the first orb larger (30-50% of total)
+                    orbExp = Math.floor(totalAmount * (0.3 + Math.random() * 0.2));
+                } else {
+                    // Randomize other orbs
+                    orbExp = Math.max(1, Math.floor(avgExpPerOrb * (0.5 + Math.random())));
+                }
+                
+                // Ensure we don't exceed remaining experience
+                orbExp = Math.min(orbExp, remainingExp);
+            }
+            
+            // Create the orb with calculated experience
+            const orb = this.createOrb(x, y, orbExp);
             orbs.push(orb);
+            
+            // Update remaining values
+            remainingExp -= orbExp;
+            remainingOrbs--;
         }
         
         return orbs;

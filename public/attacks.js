@@ -233,11 +233,20 @@ class PickaxeAttack extends Attack {
             // Check if ore is within range and in the direction of the cursor
             // Only check in the forward direction (toward cursor), not the opposite side
             if (distance < this.range && Math.abs(angleDiff) < Math.PI/6) {
-                // Calculate damage based on player's strength
-                const strengthMultiplier = this.player.strength || 1;
-                const damage = this.baseDamage * strengthMultiplier;
+                // Calculate damage based on player's strength and selected tool
+                let damage = this.baseDamage;
                 
-                // Ore is hit!
+                // If we have a tool selected, use its damage
+                if (window.selectedTool && window.selectedTool.stats && window.selectedTool.stats.strength) {
+                    damage = window.selectedTool.stats.strength;
+                    console.log(`Using ${window.selectedTool.name} with strength ${damage}`);
+                } else {
+                    // Apply player strength multiplier if no tool
+                    const strengthMultiplier = this.player.strength || 1;
+                    damage = this.baseDamage * strengthMultiplier;
+                }
+                
+                // Ore is hit! This will also release a small experience orb
                 const destroyed = ore.hit(damage);
                 
                 // Play hit sound
@@ -251,13 +260,94 @@ class PickaxeAttack extends Attack {
                 
                 // If ore is destroyed, handle drops and remove it
                 if (destroyed) {
-                    const drops = ore.getDrops();
+                    const drops = ore.getDrops ? ore.getDrops() : [];
                     console.log(`Ore destroyed! Drops:`, drops);
-                    // TODO: Add drops to player inventory
                     
-                    // Remove the ore
-                    window.ores.splice(i, 1);
-                    i--; // Adjust index since we removed an item
+                    // Create experience orbs for destruction
+                    if (window.expOrbManager && drops.experience) {
+                        try {
+                            // Get the experience amount from drops
+                            const expAmount = drops.experience;
+                            
+                            // Create a fixed number of orbs (3-5) regardless of rock size
+                            const orbCount = 3 + Math.floor(Math.random() * 3); // Random between 3 and 5
+                            
+                            console.log(`Rock destroyed! Experience: ${expAmount}, Creating ${orbCount} orbs`);
+                            
+                            // Create a burst of experience orbs
+                            window.expOrbManager.createOrbBurst(ore.x, ore.y, orbCount, expAmount);
+                            
+                            // Add a message
+                            if (window.addChatMessage) {
+                                window.addChatMessage({
+                                    type: 'system',
+                                    message: `Experience orbs released from the broken rock!`
+                                });
+                            }
+                        } catch (error) {
+                            console.error("Error creating experience orb burst:", error);
+                        }
+                    }
+                    
+                    // Add resources to inventory or player
+                    if (window.playerProgression && drops && drops.resources) {
+                        for (const resource of drops.resources) {
+                            // Try to add directly to player resources
+                            const result = window.playerProgression.addResource(resource.type, resource.amount);
+                            
+                            // If player's inventory is full, try to add to inventory
+                            if (result.capacityExceeded && result.remaining > 0 && window.playerInventory) {
+                                // Create a new BagItem for the inventory
+                                const resourceItem = new window.Equipment.BagItem({
+                                    name: resource.name || resource.type,
+                                    description: resource.description || `${resource.type} resource`,
+                                    type: 'resource',
+                                    icon: resource.icon,
+                                    value: 1,
+                                    stackable: true,
+                                    count: result.remaining,
+                                    isResource: true
+                                });
+                                
+                                // Try to add to inventory
+                                const slotIndex = window.playerInventory.addItem(resourceItem);
+                                
+                                if (slotIndex === -1) {
+                                    // Couldn't add to inventory either
+                                    if (window.addChatMessage) {
+                                        window.addChatMessage({
+                                            type: 'system',
+                                            message: `You couldn't carry all the ${resource.name || resource.type}!`
+                                        });
+                                    }
+                                } else {
+                                    if (window.addChatMessage) {
+                                        window.addChatMessage({
+                                            type: 'system',
+                                            message: `${result.remaining} ${resource.name || resource.type} added to inventory.`
+                                        });
+                                    }
+                                }
+                            } else if (!result.capacityExceeded) {
+                                // Successfully added to player resources
+                                if (window.addChatMessage) {
+                                    window.addChatMessage({
+                                        type: 'system',
+                                        message: `You collected ${result.added} ${resource.name || resource.type}.`
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Remove the ore from the manager
+                    if (window.oreManager) {
+                        window.oreManager.removeOre(ore);
+                    } else {
+                        // Fallback to direct array removal
+                        window.ores.splice(i, 1);
+                        i--; // Adjust index since we removed an item
+                    }
                 }
                 
                 hitOres.push(i);
@@ -398,11 +488,27 @@ class AxeAttack extends Attack {
             
             // Check if ore is within attack range and angle
             if (distance < this.range && Math.abs(angleDiff) < attackAngle / 2) {
-                // Ore is hit!
-                const damage = 10 + Math.floor(Math.random() * 5);
+                // Calculate damage based on selected tool or player stats
+                let damage = 10; // Default axe damage
+                
+                // If we have a tool selected, use its damage
+                if (window.selectedTool && window.selectedTool.stats && window.selectedTool.stats.strength) {
+                    damage = window.selectedTool.stats.strength;
+                    console.log(`Using ${window.selectedTool.name} with strength ${damage}`);
+                } else {
+                    // Add some randomness to base damage
+                    damage = 10 + Math.floor(Math.random() * 5);
+                }
+                
+                // Ore is hit! This will also release a small experience orb
                 const destroyed = ore.hit(damage);
                 
-                // Generate wood-like particles instead of rock sparks
+                // Play hit sound
+                if (this.playHitSound) {
+                    this.playHitSound();
+                }
+                
+                // Generate particles
                 const particles = ore.generateParticles();
                 if (particles.length > 0) {
                     window.rockParticles.push(...particles);
@@ -410,13 +516,94 @@ class AxeAttack extends Attack {
                 
                 // If ore is destroyed, handle drops and remove it
                 if (destroyed) {
-                    const drops = ore.getDrops();
+                    const drops = ore.getDrops ? ore.getDrops() : [];
                     console.log(`Ore destroyed! Drops:`, drops);
-                    // TODO: Add drops to player inventory
                     
-                    // Remove the ore
-                    window.ores.splice(i, 1);
-                    i--; // Adjust index since we removed an item
+                    // Create experience orbs for destruction
+                    if (window.expOrbManager && drops.experience) {
+                        try {
+                            // Get the experience amount from drops
+                            const expAmount = drops.experience;
+                            
+                            // Create a fixed number of orbs (3-5) regardless of rock size
+                            const orbCount = 3 + Math.floor(Math.random() * 3); // Random between 3 and 5
+                            
+                            console.log(`Rock destroyed! Experience: ${expAmount}, Creating ${orbCount} orbs`);
+                            
+                            // Create a burst of experience orbs
+                            window.expOrbManager.createOrbBurst(ore.x, ore.y, orbCount, expAmount);
+                            
+                            // Add a message
+                            if (window.addChatMessage) {
+                                window.addChatMessage({
+                                    type: 'system',
+                                    message: `Experience orbs released from the broken rock!`
+                                });
+                            }
+                        } catch (error) {
+                            console.error("Error creating experience orb burst:", error);
+                        }
+                    }
+                    
+                    // Add resources to inventory or player
+                    if (window.playerProgression && drops && drops.resources) {
+                        for (const resource of drops.resources) {
+                            // Try to add directly to player resources
+                            const result = window.playerProgression.addResource(resource.type, resource.amount);
+                            
+                            // If player's inventory is full, try to add to inventory
+                            if (result.capacityExceeded && result.remaining > 0 && window.playerInventory) {
+                                // Create a new BagItem for the inventory
+                                const resourceItem = new window.Equipment.BagItem({
+                                    name: resource.name || resource.type,
+                                    description: resource.description || `${resource.type} resource`,
+                                    type: 'resource',
+                                    icon: resource.icon,
+                                    value: 1,
+                                    stackable: true,
+                                    count: result.remaining,
+                                    isResource: true
+                                });
+                                
+                                // Try to add to inventory
+                                const slotIndex = window.playerInventory.addItem(resourceItem);
+                                
+                                if (slotIndex === -1) {
+                                    // Couldn't add to inventory either
+                                    if (window.addChatMessage) {
+                                        window.addChatMessage({
+                                            type: 'system',
+                                            message: `You couldn't carry all the ${resource.name || resource.type}!`
+                                        });
+                                    }
+                                } else {
+                                    if (window.addChatMessage) {
+                                        window.addChatMessage({
+                                            type: 'system',
+                                            message: `${result.remaining} ${resource.name || resource.type} added to inventory.`
+                                        });
+                                    }
+                                }
+                            } else if (!result.capacityExceeded) {
+                                // Successfully added to player resources
+                                if (window.addChatMessage) {
+                                    window.addChatMessage({
+                                        type: 'system',
+                                        message: `You collected ${result.added} ${resource.name || resource.type}.`
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Remove the ore from the manager
+                    if (window.oreManager) {
+                        window.oreManager.removeOre(ore);
+                    } else {
+                        // Fallback to direct array removal
+                        window.ores.splice(i, 1);
+                        i--; // Adjust index since we removed an item
+                    }
                 }
                 
                 hitOres.push(i);

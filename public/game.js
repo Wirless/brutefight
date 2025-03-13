@@ -1169,113 +1169,29 @@ function handleAttack(e) {
                 message: `${username} swings their ${currentAttack === availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
             });
             
-            // Check for ore hits
+            // Visual feedback only - don't apply damage here
+            // The actual damage will be handled by the attack system's checkHits method
             const attackRange = 50; // Attack range in pixels
             const attackX = myPlayer.x + Math.cos(attackDirection) * attackRange;
             const attackY = myPlayer.y + Math.sin(attackDirection) * attackRange;
             
-            // Check each ore for a hit
+            // Check each ore for visual hit effects only
             const ores = oreManager.getOres();
             for (const ore of ores) {
-                // Simple distance-based hit detection
+                // Simple distance-based hit detection for visual effects
                 const dx = ore.x - attackX;
                 const dy = ore.y - attackY;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 
                 if (distance < attackRange) {
-                    // Hit the ore
+                    // Visual hit effect only - no damage application
                     hitRocks.add(ore);
                     rockHitTimes.set(ore, Date.now());
                     
-                    // Apply damage based on the tool
-                    let damage = 10; // Default damage
-                    
-                    // If we have a tool selected, use its damage
-                    if (selectedTool && selectedTool.stats && selectedTool.stats.strength) {
-                        damage = selectedTool.stats.strength;
-                        console.log(`Using ${selectedTool.name} with strength ${damage}`);
-                    }
-                    
-                    // Apply damage to the ore
-                    ore.health -= damage;
-                    
-                    // Generate particles
+                    // Generate visual particles without applying damage
                     if (ore.generateParticles) {
-                        const particles = ore.generateParticles();
+                        const particles = ore.generateParticles(false); // Pass false to indicate this is just visual
                         rockParticles.push(...particles);
-                    }
-                    
-                    // Check if the ore is destroyed
-                    if (ore.health <= 0) {
-                        // Get drops from the ore
-                        const drops = ore.getDrops ? ore.getDrops() : [];
-                        console.log(`Ore destroyed! Drops:`, drops);
-                        
-                        // Create experience orbs
-                        if (expOrbManager && drops.experience) {
-                            // Calculate orb count based on experience amount
-                            // More experience = more orbs, but with a reasonable cap
-                            const expAmount = drops.experience;
-                            const orbCount = Math.min(Math.max(3, Math.ceil(expAmount / 2)), 10);
-                            
-                            // Create a burst of experience orbs
-                            expOrbManager.createOrbBurst(ore.x, ore.y, orbCount, expAmount);
-                            
-                            // Don't add experience directly, let the orbs handle it
-                            // Instead, just add a message
-                            addChatMessage({
-                                type: 'system',
-                                message: `Experience orbs released from the broken rock!`
-                            });
-                        }
-                        
-                        // Add resources to inventory or player
-                        if (window.playerProgression && drops && drops.resources) {
-                            for (const resource of drops.resources) {
-                                // Try to add directly to player resources
-                                const result = window.playerProgression.addResource(resource.type, resource.amount);
-                                
-                                // If player's inventory is full, try to add to inventory
-                                if (result.capacityExceeded && result.remaining > 0 && window.playerInventory) {
-                                    // Create a new BagItem for the inventory
-                                    const resourceItem = new window.Equipment.BagItem({
-                                        name: resource.name || resource.type,
-                                        description: resource.description || `${resource.type} resource`,
-                                        type: 'resource',
-                                        icon: resource.icon,
-                                        value: 1,
-                                        stackable: true,
-                                        count: result.remaining,
-                                        isResource: true
-                                    });
-                                    
-                                    // Try to add to inventory
-                                    const slotIndex = window.playerInventory.addItem(resourceItem);
-                                    
-                                    if (slotIndex === -1) {
-                                        // Couldn't add to inventory either
-                                        addChatMessage({
-                                            type: 'system',
-                                            message: `You couldn't carry all the ${resource.name || resource.type}!`
-                                        });
-                                    } else {
-                                        addChatMessage({
-                                            type: 'system',
-                                            message: `${result.remaining} ${resource.name || resource.type} added to inventory.`
-                                        });
-                                    }
-                                } else if (!result.capacityExceeded) {
-                                    // Successfully added to player resources
-                                    addChatMessage({
-                                        type: 'system',
-                                        message: `You collected ${result.added} ${resource.name || resource.type}.`
-                                    });
-                                }
-                            }
-                        }
-                        
-                        // Remove the ore from the manager
-                        oreManager.removeOre(ore);
                     }
                 }
             }
@@ -1293,6 +1209,7 @@ function initGame() {
     
     // Initialize experience orb manager
     expOrbManager = new window.ExperienceOrbManager();
+    window.expOrbManager = expOrbManager;
     console.log("Experience orb manager initialized");
     
     // Test creating a single ore directly

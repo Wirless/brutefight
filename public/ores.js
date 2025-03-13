@@ -21,9 +21,19 @@ class Ore {
         this.lastHitTime = 0;
         this.hitDuration = 500; // ms
         
-        // Calculate experience based on size
-        const sizeMultiplier = (this.width * this.height) / (40 * 60); // Normalized size multiplier
-        this.experience = Math.round(options.experience * sizeMultiplier) || Math.round(5 * sizeMultiplier); // Default experience per ore
+        // Calculate experience based on size - improved scaling
+        // Use a more dramatic scaling factor to ensure big rocks give significantly more exp
+        const baseSize = 40 * 60; // Standard size (width * height)
+        const actualSize = this.width * this.height;
+        const sizeRatio = actualSize / baseSize;
+        
+        // Apply a power function to make the scaling more dramatic
+        // Small rocks will give less, big rocks will give much more
+        const sizeMultiplier = Math.pow(sizeRatio, 1.5);
+        
+        // Apply the multiplier to the base experience
+        const baseExperience = options.experience || 5;
+        this.experience = Math.max(1, Math.round(baseExperience * sizeMultiplier));
         
         this.generateShape();
     }
@@ -193,26 +203,41 @@ class Ore {
         this.isHit = true;
         this.lastHitTime = Date.now();
         
+        console.log(`Rock hit! Health: ${this.health}/${this.maxHealth}, Damage: ${damage}`);
+        
         // Release a small experience orb when hit (not destroyed)
-        if (window.expOrbManager && this.health > 0) {
-            // Calculate small experience amount based on damage and total experience
-            const hitExpAmount = Math.max(1, Math.floor(damage / this.maxHealth * this.experience * 0.2));
-            
-            // Create a single small experience orb
-            window.expOrbManager.createOrb(this.x, this.y, hitExpAmount);
+        if (this.health > 0) {
+            try {
+                // Fixed experience value of 1 for each hit
+                const hitExpAmount = 1;
+                
+                console.log(`Rock hit: Releasing 1 experience point`);
+                
+                // Check if expOrbManager exists
+                if (window.expOrbManager) {
+                    console.log("Creating experience orb at", this.x, this.y, "with amount", hitExpAmount);
+                    window.expOrbManager.createOrb(this.x, this.y, hitExpAmount);
+                } else {
+                    console.error("expOrbManager not found on window object!");
+                }
+            } catch (error) {
+                console.error("Error creating experience orb:", error);
+            }
         }
         
         // Check if destroyed
         if (this.health <= 0) {
             this.health = 0;
+            console.log("Rock destroyed!");
             return true; // Destroyed
         }
         return false; // Not destroyed
     }
     
-    generateParticles() {
+    generateParticles(visualOnly = false) {
         // Base method for generating hit particles
         // To be implemented by subclasses
+        // visualOnly parameter indicates if this is just for visual effects (no damage)
         return [];
     }
     
@@ -260,22 +285,24 @@ class Stone extends Ore {
         const width = 30 + Math.random() * 50;
         const height = 30 + Math.random() * 50;
         
-        // Calculate base experience based on size
-        const sizeMultiplier = (width * height) / (30 * 30); // Normalized size multiplier
-        const baseExperience = 5 + Math.floor(Math.random() * 3); // 5-7 base exp
-        const sizeAdjustedExp = Math.round(baseExperience * sizeMultiplier);
+        // Calculate base experience based on size: 1 exp per 50 pixels
+        const pixelArea = width * height;
+        const baseExperience = Math.max(3, Math.floor(pixelArea / 50));
         
         super(x, y, {
             width: width,
             height: height,
             health: 50 + Math.random() * 50,
             color: '#777777',
-            experience: sizeAdjustedExp
+            experience: baseExperience
         });
         
         // Stone-specific properties
         this.stoneType = Math.floor(Math.random() * 3); // 0: granite, 1: limestone, 2: basalt
         this.crackLevel = 0; // 0-3, increases as health decreases
+        
+        // Log the size and experience for debugging
+        console.log(`Stone created: size=${width}x${height}, area=${pixelArea}, exp=${this.experience}`);
     }
     
     static getRandomStoneColor() {
@@ -349,7 +376,7 @@ class Stone extends Ore {
         else this.crackLevel = 0;
     }
     
-    generateParticles() {
+    generateParticles(visualOnly = false) {
         const particles = [];
         
         // Generate stone particles - now with more white square sparks
@@ -418,6 +445,11 @@ class Stone extends Ore {
     }
     
     getDrops() {
+        // Fixed experience range between 3-9 for breaking rocks
+        const finalExperience = 3 + Math.floor(Math.random() * 7); // Random between 3 and 9
+        
+        console.log(`Rock destroyed: Providing ${finalExperience} experience points`);
+        
         return {
             resources: [
                 {
@@ -428,7 +460,7 @@ class Stone extends Ore {
                     icon: 'rock-svg'
                 }
             ],
-            experience: this.experience
+            experience: finalExperience
         };
     }
 }
