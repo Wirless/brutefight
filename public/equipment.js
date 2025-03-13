@@ -29,6 +29,12 @@ const QUICK_SLOTS = {
     '0': 'quickSlot0'
 };
 
+// Add these variables at the top of the file (outside any class)
+let draggedItem = null;
+let draggedItemSource = null;
+let draggedItemSlot = null;
+let draggedItemElement = null;
+
 // Equipment Item class
 class EquipmentItem {
     constructor(options = {}) {
@@ -299,6 +305,54 @@ class BagWindowUI {
             this.handleSlotClick(slotIndex);
         });
         
+        // Add drag and drop handlers
+        slotElement.setAttribute('draggable', 'true');
+        
+        slotElement.addEventListener('dragstart', (e) => {
+            const item = this.bag.getItem(slotIndex);
+            if (item) {
+                // Set the drag data
+                draggedItem = item;
+                draggedItemSource = 'bag';
+                draggedItemSlot = slotIndex;
+                draggedItemElement = e.target;
+                
+                // Create a drag image
+                const dragImage = document.createElement('div');
+                dragImage.style.width = '40px';
+                dragImage.style.height = '40px';
+                dragImage.style.backgroundColor = item.color;
+                dragImage.style.border = `2px solid ${item.getRarityColor()}`;
+                dragImage.style.position = 'absolute';
+                dragImage.style.top = '-1000px';
+                document.body.appendChild(dragImage);
+                
+                e.dataTransfer.setDragImage(dragImage, 20, 20);
+                e.dataTransfer.effectAllowed = 'move';
+                
+                // Add a class to show it's being dragged
+                slotElement.classList.add('dragging');
+                
+                // Remove the drag image after a short delay
+                setTimeout(() => {
+                    document.body.removeChild(dragImage);
+                }, 100);
+            } else {
+                // Prevent dragging empty slots
+                e.preventDefault();
+            }
+        });
+        
+        slotElement.addEventListener('dragend', () => {
+            slotElement.classList.remove('dragging');
+            
+            // Reset drag state
+            draggedItem = null;
+            draggedItemSource = null;
+            draggedItemSlot = null;
+            draggedItemElement = null;
+        });
+        
         return slotElement;
     }
     
@@ -309,12 +363,11 @@ class BagWindowUI {
         const item = this.bag.getItem(slotIndex);
         
         if (item) {
-            // For now, just remove the item
-            const removedItem = this.bag.removeItem(slotIndex);
-            console.log(`Removed ${removedItem.name} from bag slot ${slotIndex}`);
+            // For now, just log the item info
+            console.log(`Bag slot ${slotIndex} contains: ${item.name}`);
             
-            // Update the slot
-            this.updateSlot(slotIndex);
+            // Here you could implement item usage, moving to inventory, etc.
+            // But don't remove the item by default
         } else {
             // In a real implementation, this would allow adding an item from inventory
             console.log(`Bag slot ${slotIndex} is empty`);
@@ -805,6 +858,114 @@ class EquipmentUI {
                 // Open the bag window
                 item.open(e.clientX, e.clientY);
             }
+        });
+        
+        // Add drag and drop handlers
+        slotElement.addEventListener('dragover', (e) => {
+            // Allow dropping
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            slotElement.classList.add('drag-over');
+        });
+        
+        slotElement.addEventListener('dragleave', () => {
+            slotElement.classList.remove('drag-over');
+        });
+        
+        slotElement.addEventListener('drop', (e) => {
+            e.preventDefault();
+            slotElement.classList.remove('drag-over');
+            
+            // Handle the drop
+            if (draggedItem) {
+                console.log(`Dropping ${draggedItem.name} into quickslot ${slotName}`);
+                
+                // If the item is from a bag
+                if (draggedItemSource === 'bag' && draggedItemSlot !== null) {
+                    // Get the bag
+                    const bag = this.equipmentManager.getEquippedItem(EQUIPMENT_SLOTS.BACKPACK);
+                    if (bag && bag instanceof BagItem) {
+                        // Remove the item from the bag
+                        const item = bag.removeItem(draggedItemSlot);
+                        if (item) {
+                            // Equip the item to the quickslot
+                            this.equipmentManager.equipItem(item, slotName);
+                            
+                            // Update the bag slot
+                            if (bag.windowUI) {
+                                bag.windowUI.updateSlot(draggedItemSlot);
+                            }
+                            
+                            // Update the quickslot
+                            this.updateQuickSlot(slotName);
+                        }
+                    }
+                }
+                // If the item is from another quickslot
+                else if (draggedItemSource === 'quickslot' && draggedItemSlot) {
+                    // Move the item between quickslots
+                    const item = this.equipmentManager.getEquippedItem(draggedItemSlot);
+                    if (item) {
+                        // Unequip from the original slot
+                        this.equipmentManager.unequipItem(draggedItemSlot);
+                        
+                        // Equip to the new slot
+                        this.equipmentManager.equipItem(item, slotName);
+                        
+                        // Update both slots
+                        this.updateQuickSlot(draggedItemSlot);
+                        this.updateQuickSlot(slotName);
+                    }
+                }
+            }
+        });
+        
+        // Make quickslots draggable too
+        slotElement.setAttribute('draggable', 'true');
+        
+        slotElement.addEventListener('dragstart', (e) => {
+            const item = this.equipmentManager.getEquippedItem(slotName);
+            if (item) {
+                // Set the drag data
+                draggedItem = item;
+                draggedItemSource = 'quickslot';
+                draggedItemSlot = slotName;
+                draggedItemElement = e.target;
+                
+                // Create a drag image
+                const dragImage = document.createElement('div');
+                dragImage.style.width = '40px';
+                dragImage.style.height = '40px';
+                dragImage.style.backgroundColor = item.color;
+                dragImage.style.border = `2px solid ${item.getRarityColor()}`;
+                dragImage.style.position = 'absolute';
+                dragImage.style.top = '-1000px';
+                document.body.appendChild(dragImage);
+                
+                e.dataTransfer.setDragImage(dragImage, 20, 20);
+                e.dataTransfer.effectAllowed = 'move';
+                
+                // Add a class to show it's being dragged
+                slotElement.classList.add('dragging');
+                
+                // Remove the drag image after a short delay
+                setTimeout(() => {
+                    document.body.removeChild(dragImage);
+                }, 100);
+            } else {
+                // Prevent dragging empty slots
+                e.preventDefault();
+            }
+        });
+        
+        slotElement.addEventListener('dragend', () => {
+            slotElement.classList.remove('dragging');
+            
+            // Reset drag state
+            draggedItem = null;
+            draggedItemSource = null;
+            draggedItemSlot = null;
+            draggedItemElement = null;
         });
         
         return slotElement;
