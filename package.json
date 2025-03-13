@@ -1,0 +1,26 @@
+{
+  "name": "multiplayer-2d-game",
+  "version": "1.0.0",
+  "description": "A simple multiplayer 2D game with Node.js, Express, and Socket.io",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "game",
+    "multiplayer",
+    "websocket",
+    "node.js",
+    "socket.io"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+} 

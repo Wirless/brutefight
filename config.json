@@ -1,0 +1,23 @@
+{
+  "game": {
+    "port": 80,
+    "maxPlayers": 100,
+    "saveInterval": 60000
+  },
+  "players": {
+    "spawnX": 5000,
+    "spawnY": 5000,
+    "defaultSpeed": 5
+  },
+  "features": {
+    "showOfflinePlayers": false,
+    "enablePvP": false,
+    "autoSave": true
+  },
+  "security": {
+    "maxConnectionsPerIP": 5
+  },
+  "comments": {
+    "showOfflinePlayers": "false"
+  }
+} 

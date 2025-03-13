@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Admin Panel</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #222;
+            color: #eee;
+        }
+        h1, h2 {
+            color: #fff;
+            text-shadow: 0 0 10px rgba(0, 233, 150, 0.6);
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #333;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 233, 150, 0.3);
+        }
+        .form-group {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #444;
+            border-radius: 5px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background-color: #555;
+            color: white;
+        }
+        input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: rgb(0, 233, 150);
+            color: black;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: rgb(0, 200, 130);
+            box-shadow: 0 0 10px rgba(0, 233, 150, 0.7);
+        }
+        .success {
+            background-color: rgba(0, 233, 150, 0.2);
+            border: 1px solid rgb(0, 233, 150);
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            display: none;
+        }
+        .comment {
+            font-style: italic;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Game Admin Panel</h1>
+        
+        <div id="statusMessage" class="success"></div>
+        
+        <div id="configForm">
+            <h2>Game Configuration</h2>
+            
+            <div class="form-group">
+                <h3>Game Settings</h3>
+                <label>
+                    Port:
+                    <input type="number" id="port" min="1" max="65535">
+                </label>
+                <label>
+                    Max Players:
+                    <input type="number" id="maxPlayers" min="1">
+                </label>
+                <label>
+                    Save Interval (ms):
+                    <input type="number" id="saveInterval" min="1000">
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <h3>Player Settings</h3>
+                <label>
+                    Spawn X:
+                    <input type="number" id="spawnX">
+                </label>
+                <label>
+                    Spawn Y:
+                    <input type="number" id="spawnY">
+                </label>
+                <label>
+                    Default Speed:
+                    <input type="number" id="defaultSpeed" min="1" max="20">
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <h3>Feature Toggles</h3>
+                <label>
+                    <input type="checkbox" id="showOfflinePlayers">
+                    Show Offline Players
+                </label>
+                <div class="comment">When enabled, offline players remain visible on the map. When disabled, disconnected players are removed from other players' view.</div>
+                
+                <label>
+                    <input type="checkbox" id="enablePvP">
+                    Enable PvP
+                </label>
+                
+                <label>
+                    <input type="checkbox" id="autoSave">
+                    Auto Save
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <h3>Security Settings</h3>
+                <label>
+                    Max Connections Per IP:
+                    <input type="number" id="maxConnectionsPerIP" min="1">
+                </label>
+            </div>
+            
+            <button id="saveButton">Save Configuration</button>
+            <button id="reloadButton">Reload Configuration</button>
+        </div>
+    </div>
+    
+    <script>
+        // Load current configuration
+        async function loadConfig() {
+            try {
+                const response = await fetch('/admin/config');
+                if (response.ok) {
+                    const config = await response.json();
+                    
+                    // Game settings
+                    document.getElementById('port').value = config.game?.port || 80;
+                    document.getElementById('maxPlayers').value = config.game?.maxPlayers || 100;
+                    document.getElementById('saveInterval').value = config.game?.saveInterval || 60000;
+                    
+                    // Player settings
+                    document.getElementById('spawnX').value = config.players?.spawnX || 5000;
+                    document.getElementById('spawnY').value = config.players?.spawnY || 5000;
+                    document.getElementById('defaultSpeed').value = config.players?.defaultSpeed || 5;
+                    
+                    // Feature toggles
+                    document.getElementById('showOfflinePlayers').checked = config.features?.showOfflinePlayers || false;
+                    document.getElementById('enablePvP').checked = config.features?.enablePvP || false;
+                    document.getElementById('autoSave').checked = config.features?.autoSave !== false; // Default true
+                    
+                    // Security
+                    document.getElementById('maxConnectionsPerIP').value = config.security?.maxConnectionsPerIP || 5;
+                    
+                    showMessage('Configuration loaded successfully');
+                } else {
+                    showMessage('Error loading configuration: ' + response.statusText);
+                }
+            } catch (error) {
+                showMessage('Error loading configuration: ' + error.message);
+            }
+        }
+        
+        // Save configuration
+        async function saveConfig() {
+            try {
+                const config = {
+                    game: {
+                        port: parseInt(document.getElementById('port').value) || 80,
+                        maxPlayers: parseInt(document.getElementById('maxPlayers').value) || 100,
+                        saveInterval: parseInt(document.getElementById('saveInterval').value) || 60000
+                    },
+                    players: {
+                        spawnX: parseInt(document.getElementById('spawnX').value) || 5000,
+                        spawnY: parseInt(document.getElementById('spawnY').value) || 5000,
+                        defaultSpeed: parseInt(document.getElementById('defaultSpeed').value) || 5
+                    },
+                    features: {
+                        showOfflinePlayers: document.getElementById('showOfflinePlayers').checked,
+                        enablePvP: document.getElementById('enablePvP').checked,
+                        autoSave: document.getElementById('autoSave').checked
+                    },
+                    security: {
+                        maxConnectionsPerIP: parseInt(document.getElementById('maxConnectionsPerIP').value) || 5
+                    },
+                    comments: {
+                        showOfflinePlayers: "When true, offline players remain visible on the map. Set to false to remove disconnected players from other players' view. Might be re-enabled as a future feature."
+                    }
+                };
+                
+                const response = await fetch('/admin/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    showMessage('Configuration saved successfully! Server restart may be required for some changes to take effect.');
+                } else {
+                    showMessage('Error saving configuration: ' + response.statusText);
+                }
+            } catch (error) {
+                showMessage('Error saving configuration: ' + error.message);
+            }
+        }
+        
+        function showMessage(message) {
+            const statusElement = document.getElementById('statusMessage');
+            statusElement.textContent = message;
+            statusElement.style.display = 'block';
+            
+            // Hide after 5 seconds
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Event listeners
+        document.getElementById('saveButton').addEventListener('click', saveConfig);
+        document.getElementById('reloadButton').addEventListener('click', loadConfig);
+        
+        // Load config on page load
+        document.addEventListener('DOMContentLoaded', loadConfig);
+    </script>
+</body>
+</html> 
