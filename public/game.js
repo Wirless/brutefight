@@ -102,6 +102,9 @@ let selectedTool = null;
 // Change from a local variable to a global one
 window.selectedTool = null;
 
+// Add to the global variables section
+let expOrbManager = null;
+
 // Generate grass patterns (pre-rendered grass patterns for performance)
 function generateGrassPatterns() {
     for (let i = 0; i < 5; i++) {
@@ -930,7 +933,7 @@ function drawAttackEffect() {
     }
 }
 
-// Game rendering loop
+// Update the game loop to include experience orbs
 function startGameLoop() {
     function gameLoop(timestamp) {
         // Calculate time since last frame
@@ -947,6 +950,11 @@ function startGameLoop() {
         
         // Update attack state
         updateAttack(deltaTime);
+        
+        // Update experience orbs
+        if (expOrbManager && myPlayer) {
+            expOrbManager.update(myPlayer.x, myPlayer.y, deltaTime);
+        }
         
         // Send updates to server at fixed intervals
         serverUpdateInterval += deltaTime;
@@ -966,6 +974,11 @@ function startGameLoop() {
         
         // Draw particles
         drawParticles();
+        
+        // Draw experience orbs
+        if (expOrbManager) {
+            expOrbManager.draw(ctx, cameraX, cameraY);
+        }
         
         // Draw all players
         for (const playerName in players) {
@@ -1131,7 +1144,7 @@ document.addEventListener('DOMContentLoaded', function() {
     preloadSprites();
 });
 
-// Handle player attack
+// Update the handle attack function to create exp orbs when a rock is destroyed
 function handleAttack(e) {
     if (isChatFocused || !myPlayer) return;
     
@@ -1192,61 +1205,61 @@ function handleAttack(e) {
                         const drops = ore.getDrops ? ore.getDrops() : [];
                         console.log(`Ore destroyed! Drops:`, drops);
                         
-                        // Add resources and experience to player
-                        if (window.playerProgression && drops) {
-                            // Add experience
-                            if (drops.experience) {
-                                window.playerProgression.addExperience(drops.experience);
-                                
-                                // Add message about experience
-                                addChatMessage({
-                                    type: 'system',
-                                    message: `You gained ${drops.experience} experience from mining.`
-                                });
-                            }
+                        // Create experience orbs
+                        if (expOrbManager && drops.experience) {
+                            // Create multiple orbs based on experience amount (1 orb per exp point)
+                            const orbCount = Math.min(drops.experience, 10); // Cap at 10 orbs
+                            expOrbManager.createOrbBurst(ore.x, ore.y, orbCount, drops.experience);
                             
-                            // Add resources to inventory or player
-                            if (drops.resources && drops.resources.length > 0) {
-                                for (const resource of drops.resources) {
-                                    // Try to add directly to player resources
-                                    const result = window.playerProgression.addResource(resource.type, resource.amount);
+                            // Don't add experience directly, let the orbs handle it
+                            // Instead, just add a message
+                            addChatMessage({
+                                type: 'system',
+                                message: `Experience orbs released from the broken rock!`
+                            });
+                        }
+                        
+                        // Add resources to inventory or player
+                        if (window.playerProgression && drops && drops.resources) {
+                            for (const resource of drops.resources) {
+                                // Try to add directly to player resources
+                                const result = window.playerProgression.addResource(resource.type, resource.amount);
+                                
+                                // If player's inventory is full, try to add to inventory
+                                if (result.capacityExceeded && result.remaining > 0 && window.playerInventory) {
+                                    // Create a new BagItem for the inventory
+                                    const resourceItem = new window.Equipment.BagItem({
+                                        name: resource.name || resource.type,
+                                        description: resource.description || `${resource.type} resource`,
+                                        type: 'resource',
+                                        icon: resource.icon,
+                                        value: 1,
+                                        stackable: true,
+                                        count: result.remaining,
+                                        isResource: true
+                                    });
                                     
-                                    // If player's inventory is full, try to add to inventory
-                                    if (result.capacityExceeded && result.remaining > 0 && window.playerInventory) {
-                                        // Create a new BagItem for the inventory
-                                        const resourceItem = new window.Equipment.BagItem({
-                                            name: resource.name || resource.type,
-                                            description: resource.description || `${resource.type} resource`,
-                                            type: 'resource',
-                                            icon: resource.icon,
-                                            value: 1,
-                                            stackable: true,
-                                            count: result.remaining,
-                                            isResource: true
-                                        });
-                                        
-                                        // Try to add to inventory
-                                        const slotIndex = window.playerInventory.addItem(resourceItem);
-                                        
-                                        if (slotIndex === -1) {
-                                            // Couldn't add to inventory either
-                                            addChatMessage({
-                                                type: 'system',
-                                                message: `You couldn't carry all the ${resource.name || resource.type}!`
-                                            });
-                                        } else {
-                                            addChatMessage({
-                                                type: 'system',
-                                                message: `${result.remaining} ${resource.name || resource.type} added to inventory.`
-                                            });
-                                        }
-                                    } else if (!result.capacityExceeded) {
-                                        // Successfully added to player resources
+                                    // Try to add to inventory
+                                    const slotIndex = window.playerInventory.addItem(resourceItem);
+                                    
+                                    if (slotIndex === -1) {
+                                        // Couldn't add to inventory either
                                         addChatMessage({
                                             type: 'system',
-                                            message: `You collected ${result.added} ${resource.name || resource.type}.`
+                                            message: `You couldn't carry all the ${resource.name || resource.type}!`
+                                        });
+                                    } else {
+                                        addChatMessage({
+                                            type: 'system',
+                                            message: `${result.remaining} ${resource.name || resource.type} added to inventory.`
                                         });
                                     }
+                                } else if (!result.capacityExceeded) {
+                                    // Successfully added to player resources
+                                    addChatMessage({
+                                        type: 'system',
+                                        message: `You collected ${result.added} ${resource.name || resource.type}.`
+                                    });
                                 }
                             }
                         }
@@ -1260,13 +1273,17 @@ function handleAttack(e) {
     }
 }
 
-// Initialize the game
+// Update the initGame function to initialize the exp orb manager
 function initGame() {
     console.log("Initializing game...");
     
     // Initialize ore manager
     oreManager = new window.OreManager().init();
     console.log("Ore manager initialized");
+    
+    // Initialize experience orb manager
+    expOrbManager = new window.ExperienceOrbManager();
+    console.log("Experience orb manager initialized");
     
     // Test creating a single ore directly
     try {

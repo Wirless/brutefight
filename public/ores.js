@@ -20,7 +20,7 @@ class Ore {
         this.isHit = false;
         this.lastHitTime = 0;
         this.hitDuration = 500; // ms
-        this.experience = options.experience || 10; // Experience awarded when mined
+        this.experience = options.experience || 5; // Default experience per ore
         this.generateShape();
     }
     
@@ -242,17 +242,14 @@ class Ore {
 }
 
 class Stone extends Ore {
-    constructor(x, y, options = {}) {
-        // Set stone-specific default options with 100 health
-        const stoneOptions = {
-            width: options.width || 30 + Math.random() * 20,
-            height: options.height || 45 + Math.random() * 35,
-            health: options.health || 100, // Fixed 100 health for all stones
-            color: options.color || Stone.getRandomStoneColor(),
-            experience: options.experience || 10
-        };
-        
-        super(x, y, stoneOptions);
+    constructor(x, y) {
+        super(x, y, {
+            width: 30 + Math.random() * 50,
+            height: 30 + Math.random() * 50,
+            health: 50 + Math.random() * 50,
+            color: '#777777',
+            experience: 5 + Math.floor(Math.random() * 3) // 5-7 exp per stone
+        });
         
         // Stone-specific properties
         this.stoneType = Math.floor(Math.random() * 3); // 0: granite, 1: limestone, 2: basalt
