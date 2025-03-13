@@ -115,6 +115,9 @@ class PlayerProgression {
             if (canAdd > 0) {
                 this.player.resources[type] += canAdd;
                 this.updateUI();
+                
+                // Try to add to inventory if it exists
+                this.addResourceToInventory(type, canAdd);
             }
             
             return {
@@ -131,6 +134,9 @@ class PlayerProgression {
         
         this.player.resources[type] += amount;
         this.updateUI();
+        
+        // Try to add to inventory if it exists
+        this.addResourceToInventory(type, amount);
         
         return {
             added: amount,
@@ -246,33 +252,16 @@ class PlayerProgression {
         // Create capacity text
         this.capacityText = document.createElement('span');
         
-        // Create rock display
-        this.rockDisplay = document.createElement('div');
-        this.rockDisplay.className = 'rock-display';
-        this.rockDisplay.style.display = 'flex';
-        this.rockDisplay.style.alignItems = 'center';
-        this.rockDisplay.style.gap = '5px';
+        // Add capacity elements to display
+        this.capacityDisplay.appendChild(this.capacityIcon);
+        this.capacityDisplay.appendChild(this.capacityText);
         
-        // Create rock icon (rock)
-        this.rockIcon = document.createElement('span');
-        this.rockIcon.textContent = '🪨';
-        this.rockIcon.style.fontSize = '16px';
-        
-        // Create rock text
-        this.rockText = document.createElement('span');
+        // Add capacity display to resources display
+        this.resourcesDisplay.appendChild(this.capacityDisplay);
         
         // Assemble the UI
         this.expBarContainer.appendChild(this.expBar);
         this.expBarContainer.appendChild(this.levelText);
-        
-        this.capacityDisplay.appendChild(this.capacityIcon);
-        this.capacityDisplay.appendChild(this.capacityText);
-        
-        this.rockDisplay.appendChild(this.rockIcon);
-        this.rockDisplay.appendChild(this.rockText);
-        
-        this.resourcesDisplay.appendChild(this.capacityDisplay);
-        this.resourcesDisplay.appendChild(this.rockDisplay);
         
         // Add to game panel
         const gamePanel = document.getElementById('gamePanel');
@@ -306,9 +295,6 @@ class PlayerProgression {
         } else {
             this.capacityText.style.color = 'white';
         }
-        
-        // Update rock text
-        this.rockText.textContent = this.player.resources.rocks || 0;
     }
     
     // Show level up message
@@ -357,6 +343,73 @@ class PlayerProgression {
                 type: 'system',
                 message: `Congratulations! You have reached level ${this.player.level}.`
             });
+        }
+    }
+    
+    // Add resource to inventory
+    addResourceToInventory(type, amount) {
+        // Check if inventory exists
+        if (!window.playerInventory) return;
+        
+        // Find resource definition
+        let resourceItem = null;
+        
+        // Try to find existing stack of this resource type in inventory
+        for (let i = 0; i < window.playerInventory.size; i++) {
+            const item = window.playerInventory.getItem(i);
+            if (item && item.type === 'resource' && item.name.toLowerCase() === type) {
+                // Found existing stack
+                if (item.count < item.maxStack) {
+                    // Can add to this stack
+                    const addAmount = Math.min(amount, item.maxStack - item.count);
+                    item.count += addAmount;
+                    window.playerInventory.setItem(i, item);
+                    amount -= addAmount;
+                    
+                    if (amount <= 0) return; // All added
+                }
+            }
+        }
+        
+        // If we still have resources to add, create new stacks
+        while (amount > 0) {
+            // Find resource definition in items.json if we don't have it yet
+            if (!resourceItem) {
+                // Find the resource definition
+                const resourceDef = window.items ? window.items.find(i => 
+                    i.type === 'resource' && i.name.toLowerCase() === type
+                ) : null;
+                
+                if (!resourceDef) {
+                    // Create a generic resource item
+                    resourceItem = {
+                        name: type.charAt(0).toUpperCase() + type.slice(1),
+                        description: `${type} resource`,
+                        type: 'resource',
+                        stackable: true,
+                        maxStack: 100,
+                        color: '#A9A9A9',
+                        icon: 'rock-svg',
+                        rarity: 'common',
+                        isResource: true
+                    };
+                } else {
+                    resourceItem = { ...resourceDef };
+                }
+            }
+            
+            // Create a new stack
+            const newStack = { ...resourceItem };
+            newStack.count = Math.min(amount, newStack.maxStack || 100);
+            
+            // Add to inventory
+            const slotIndex = window.playerInventory.addItem(newStack);
+            if (slotIndex === -1) {
+                // Inventory is full
+                break;
+            }
+            
+            amount -= newStack.count;
         }
     }
 }

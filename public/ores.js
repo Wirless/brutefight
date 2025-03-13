@@ -21,19 +21,8 @@ class Ore {
         this.lastHitTime = 0;
         this.hitDuration = 500; // ms
         
-        // Calculate experience based on size - improved scaling
-        // Use a more dramatic scaling factor to ensure big rocks give significantly more exp
-        const baseSize = 40 * 60; // Standard size (width * height)
-        const actualSize = this.width * this.height;
-        const sizeRatio = actualSize / baseSize;
-        
-        // Apply a power function to make the scaling more dramatic
-        // Small rocks will give less, big rocks will give much more
-        const sizeMultiplier = Math.pow(sizeRatio, 1.5);
-        
-        // Apply the multiplier to the base experience
-        const baseExperience = options.experience || 5;
-        this.experience = Math.max(1, Math.round(baseExperience * sizeMultiplier));
+        // Store base experience value for reference, but actual exp is calculated in getDrops
+        this.baseExperience = options.experience || 5;
         
         this.generateShape();
     }
@@ -242,7 +231,25 @@ class Ore {
     }
     
     getDrops() {
-        // Stone drops stone resources
+        // Calculate pixel area of the ore
+        const pixelArea = this.width * this.height;
+        
+        // Base experience: 3-9 for small ores (400 pixels or less)
+        let finalExperience = 3 + Math.floor(Math.random() * 7);
+        let expBreakdown = `Base: ${finalExperience}`;
+        
+        // For larger ores, add 3 exp for every additional 300 pixels
+        if (pixelArea > 400) {
+            // Calculate how many additional 300-pixel chunks we have
+            const additionalChunks = Math.floor((pixelArea - 400) / 300);
+            // Add 3 exp per chunk
+            const bonusExp = additionalChunks * 3;
+            finalExperience += bonusExp;
+            expBreakdown += `, Size Bonus: +${bonusExp} (${additionalChunks} chunks)`;
+        }
+        
+        console.log(`Rock destroyed: Size=${this.width}x${this.height}, Area=${pixelArea}, Experience=${finalExperience} (${expBreakdown})`);
+        
         return {
             resources: [
                 {
@@ -253,7 +260,7 @@ class Ore {
                     icon: 'rock-svg'
                 }
             ],
-            experience: this.experience
+            experience: finalExperience
         };
     }
     
@@ -285,24 +292,20 @@ class Stone extends Ore {
         const width = 30 + Math.random() * 50;
         const height = 30 + Math.random() * 50;
         
-        // Calculate base experience based on size: 1 exp per 50 pixels
-        const pixelArea = width * height;
-        const baseExperience = Math.max(3, Math.floor(pixelArea / 50));
-        
         super(x, y, {
             width: width,
             height: height,
             health: 50 + Math.random() * 50,
-            color: '#777777',
-            experience: baseExperience
+            color: '#777777'
         });
         
         // Stone-specific properties
         this.stoneType = Math.floor(Math.random() * 3); // 0: granite, 1: limestone, 2: basalt
         this.crackLevel = 0; // 0-3, increases as health decreases
         
-        // Log the size and experience for debugging
-        console.log(`Stone created: size=${width}x${height}, area=${pixelArea}, exp=${this.experience}`);
+        // Log the size for debugging
+        const pixelArea = width * height;
+        console.log(`Stone created: size=${width}x${height}, area=${pixelArea}`);
     }
     
     static getRandomStoneColor() {
@@ -445,10 +448,24 @@ class Stone extends Ore {
     }
     
     getDrops() {
-        // Fixed experience range between 3-9 for breaking rocks
-        const finalExperience = 3 + Math.floor(Math.random() * 7); // Random between 3 and 9
+        // Calculate pixel area of the rock
+        const pixelArea = this.width * this.height;
         
-        console.log(`Rock destroyed: Providing ${finalExperience} experience points`);
+        // Base experience: 3-9 for small rocks (400 pixels or less)
+        let finalExperience = 3 + Math.floor(Math.random() * 7);
+        let expBreakdown = `Base: ${finalExperience}`;
+        
+        // For larger rocks, add 3 exp for every additional 300 pixels
+        if (pixelArea > 400) {
+            // Calculate how many additional 300-pixel chunks we have
+            const additionalChunks = Math.floor((pixelArea - 400) / 300);
+            // Add 3 exp per chunk
+            const bonusExp = additionalChunks * 3;
+            finalExperience += bonusExp;
+            expBreakdown += `, Size Bonus: +${bonusExp} (${additionalChunks} chunks)`;
+        }
+        
+        console.log(`Rock destroyed: Size=${this.width}x${this.height}, Area=${pixelArea}, Experience=${finalExperience} (${expBreakdown})`);
         
         return {
             resources: [

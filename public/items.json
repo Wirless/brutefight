@@ -46,7 +46,7 @@
       "description": "A piece of rock harvested from stone deposits.",
       "type": "resource",
       "stackable": true,
-      "maxStack": 64,
+      "maxStack": 100,
       "color": "#A9A9A9",
       "icon": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><polygon points=\"30,70 20,40 40,20 70,30 80,60 60,80\" fill=\"%23A9A9A9\" /></svg>",
       "rarity": "common"
@@ -57,7 +57,7 @@
       "description": "Wood harvested from trees.",
       "type": "resource",
       "stackable": true,
-      "maxStack": 64,
+      "maxStack": 100,
       "color": "#8B4513",
       "icon": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect x=\"30\" y=\"20\" width=\"40\" height=\"60\" fill=\"%238B4513\" /></svg>",
       "rarity": "common"
@@ -108,7 +108,7 @@
       "description": "Raw iron that can be smelted into iron ingots.",
       "type": "resource",
       "stackable": true,
-      "maxStack": 32,
+      "maxStack": 100,
       "color": "#D3D3D3",
       "icon": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><polygon points=\"30,70 20,40 40,20 70,30 80,60 60,80\" fill=\"%23D3D3D3\" /></svg>",
       "rarity": "uncommon"
@@ -119,7 +119,7 @@
       "description": "Raw gold that can be smelted into gold ingots.",
       "type": "resource",
       "stackable": true,
-      "maxStack": 16,
+      "maxStack": 100,
       "color": "#FFD700",
       "icon": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><polygon points=\"30,70 20,40 40,20 70,30 80,60 60,80\" fill=\"%23FFD700\" /></svg>",
       "rarity": "rare"
