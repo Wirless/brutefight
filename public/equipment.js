@@ -35,6 +35,362 @@ let draggedItemSource = null;
 let draggedItemSlot = null;
 let draggedItemElement = null;
 
+// New inventory system
+class Inventory {
+    constructor(size = 16) {
+        this.size = size;
+        this.slots = new Array(size).fill(null);
+        this.ui = null;
+    }
+    
+    // Add an item to the inventory
+    addItem(item) {
+        // Find first empty slot
+        for (let i = 0; i < this.size; i++) {
+            if (this.slots[i] === null) {
+                this.slots[i] = item;
+                if (this.ui) this.ui.updateSlot(i);
+                return i;
+            }
+        }
+        return -1; // Inventory full
+    }
+    
+    // Remove an item from a slot
+    removeItem(slotIndex) {
+        if (slotIndex >= 0 && slotIndex < this.size && this.slots[slotIndex] !== null) {
+            const item = this.slots[slotIndex];
+            this.slots[slotIndex] = null;
+            if (this.ui) this.ui.updateSlot(slotIndex);
+            return item;
+        }
+        return null;
+    }
+    
+    // Get an item without removing it
+    getItem(slotIndex) {
+        if (slotIndex >= 0 && slotIndex < this.size) {
+            return this.slots[slotIndex];
+        }
+        return null;
+    }
+    
+    // Set an item in a specific slot
+    setItem(slotIndex, item) {
+        if (slotIndex >= 0 && slotIndex < this.size) {
+            this.slots[slotIndex] = item;
+            if (this.ui) this.ui.updateSlot(slotIndex);
+            return true;
+        }
+        return false;
+    }
+}
+
+// Inventory UI class
+class InventoryUI {
+    constructor(inventory) {
+        this.inventory = inventory;
+        this.inventory.ui = this;
+        this.container = null;
+        this.slotElements = [];
+        this.isVisible = false;
+        
+        this.createUI();
+    }
+    
+    createUI() {
+        // Create main container
+        this.container = document.createElement('div');
+        this.container.className = 'inventory-panel';
+        this.container.style.position = 'fixed';
+        this.container.style.top = '50%';
+        this.container.style.left = '50%';
+        this.container.style.transform = 'translate(-50%, -50%)';
+        this.container.style.width = '400px';
+        this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.container.style.border = '2px solid rgb(0, 233, 150)';
+        this.container.style.borderRadius = '5px';
+        this.container.style.padding = '15px';
+        this.container.style.zIndex = '100';
+        this.container.style.display = 'none';
+        this.container.style.flexDirection = 'column';
+        this.container.style.gap = '10px';
+        this.container.style.boxShadow = '0 0 15px rgba(0, 233, 150, 0.3)';
+        
+        // Create header
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.marginBottom = '10px';
+        
+        const title = document.createElement('h2');
+        title.textContent = 'Inventory';
+        title.style.color = 'rgb(0, 233, 150)';
+        title.style.margin = '0';
+        header.appendChild(title);
+        
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '✕';
+        closeButton.style.backgroundColor = 'transparent';
+        closeButton.style.border = 'none';
+        closeButton.style.color = 'rgb(0, 233, 150)';
+        closeButton.style.fontSize = '20px';
+        closeButton.style.cursor = 'pointer';
+        closeButton.addEventListener('click', () => this.hide());
+        header.appendChild(closeButton);
+        
+        this.container.appendChild(header);
+        
+        // Create slots grid
+        const slotsGrid = document.createElement('div');
+        slotsGrid.style.display = 'grid';
+        slotsGrid.style.gridTemplateColumns = 'repeat(8, 1fr)';
+        slotsGrid.style.gap = '5px';
+        
+        // Create inventory slots
+        for (let i = 0; i < this.inventory.size; i++) {
+            const slot = this.createSlot(i);
+            slotsGrid.appendChild(slot);
+            this.slotElements.push(slot);
+        }
+        
+        this.container.appendChild(slotsGrid);
+        document.body.appendChild(this.container);
+        
+        // Update all slots
+        this.updateAllSlots();
+    }
+    
+    createSlot(index) {
+        const slot = document.createElement('div');
+        slot.className = 'inventory-slot';
+        slot.dataset.slotIndex = index;
+        slot.style.width = '40px';
+        slot.style.height = '40px';
+        slot.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        slot.style.border = '1px solid rgb(0, 233, 150)';
+        slot.style.borderRadius = '3px';
+        slot.style.display = 'flex';
+        slot.style.justifyContent = 'center';
+        slot.style.alignItems = 'center';
+        slot.style.position = 'relative';
+        slot.style.cursor = 'pointer';
+        
+        // Hover effect
+        slot.addEventListener('mouseover', () => {
+            slot.style.boxShadow = '0 0 5px rgba(0, 233, 150, 0.5)';
+            slot.style.backgroundColor = 'rgba(0, 50, 30, 0.5)';
+        });
+        
+        slot.addEventListener('mouseout', () => {
+            slot.style.boxShadow = 'none';
+            slot.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        });
+        
+        // Click handlers for drag and drop
+        slot.addEventListener('mousedown', (e) => {
+            // Left click - drag item
+            if (e.button === 0) {
+                this.handleSlotLeftClick(index);
+            }
+            // Right click - context menu or use item
+            else if (e.button === 2) {
+                e.preventDefault();
+                this.handleSlotRightClick(index);
+            }
+        });
+        
+        // Prevent context menu on right click
+        slot.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+        
+        return slot;
+    }
+    
+    handleSlotLeftClick(index) {
+        const item = this.inventory.getItem(index);
+        
+        // If we already have a dragged item, place it in this slot
+        if (draggedItem) {
+            // Remove the item from its original location
+            if (draggedItemSource === 'inventory') {
+                this.inventory.removeItem(draggedItemSlot);
+            } else if (draggedItemSource === 'equipment') {
+                window.equipmentManager.unequipItem(draggedItemSlot);
+            } else if (draggedItemSource === 'quickslot') {
+                window.equipmentManager.quickSlots[draggedItemSlot] = null;
+                window.equipmentManager.ui.updateSlot(draggedItemSlot, true);
+            }
+            
+            // If there's an item in this slot, swap it
+            const currentItem = this.inventory.getItem(index);
+            if (currentItem) {
+                // Put the current item where the dragged item was
+                if (draggedItemSource === 'inventory') {
+                    this.inventory.setItem(draggedItemSlot, currentItem);
+                } else if (draggedItemSource === 'equipment') {
+                    window.equipmentManager.equipItem(currentItem, draggedItemSlot);
+                } else if (draggedItemSource === 'quickslot') {
+                    window.equipmentManager.quickSlots[draggedItemSlot] = currentItem;
+                    window.equipmentManager.ui.updateSlot(draggedItemSlot, true);
+                }
+            }
+            
+            // Place the dragged item in this slot
+            this.inventory.setItem(index, draggedItem);
+            
+            // Clear dragged item
+            if (draggedItemElement) {
+                document.body.removeChild(draggedItemElement);
+            }
+            draggedItem = null;
+            draggedItemSource = null;
+            draggedItemSlot = null;
+            draggedItemElement = null;
+            
+            return;
+        }
+        
+        // If there's an item in this slot, start dragging it
+        if (item) {
+            draggedItem = item;
+            draggedItemSource = 'inventory';
+            draggedItemSlot = index;
+            
+            // Create a visual element for dragging
+            draggedItemElement = document.createElement('div');
+            draggedItemElement.style.position = 'absolute';
+            draggedItemElement.style.width = '40px';
+            draggedItemElement.style.height = '40px';
+            draggedItemElement.style.backgroundColor = item.color;
+            draggedItemElement.style.border = `2px solid ${item.getRarityColor()}`;
+            draggedItemElement.style.borderRadius = '3px';
+            draggedItemElement.style.zIndex = '1000';
+            draggedItemElement.style.pointerEvents = 'none';
+            draggedItemElement.style.opacity = '0.8';
+            
+            // Position at mouse cursor
+            const mouseX = event.clientX;
+            const mouseY = event.clientY;
+            draggedItemElement.style.left = `${mouseX - 20}px`;
+            draggedItemElement.style.top = `${mouseY - 20}px`;
+            
+            document.body.appendChild(draggedItemElement);
+            
+            // Add mouse move handler
+            document.addEventListener('mousemove', this.handleMouseMove);
+            
+            // Add mouse up handler
+            document.addEventListener('mouseup', this.handleMouseUp);
+        }
+    }
+    
+    handleSlotRightClick(index) {
+        const item = this.inventory.getItem(index);
+        
+        if (item) {
+            // If it's a bag, open it
+            if (item.type === 'bag') {
+                // Get mouse position
+                const mouseX = event.clientX;
+                const mouseY = event.clientY;
+                
+                // Open the bag at mouse position
+                item.open(mouseX, mouseY);
+            }
+            // If it's a tool or weapon, equip to quickslot
+            else if (item.type === 'tool' || item.type === 'weapon') {
+                // Find first empty quickslot
+                for (const key in QUICK_SLOTS) {
+                    const slotName = QUICK_SLOTS[key];
+                    if (!window.equipmentManager.quickSlots[slotName]) {
+                        // Add to quickslot
+                        window.equipmentManager.quickSlots[slotName] = item;
+                        window.equipmentManager.ui.updateSlot(slotName, true);
+                        
+                        // Remove from inventory
+                        this.inventory.removeItem(index);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    handleMouseMove(e) {
+        if (draggedItemElement) {
+            draggedItemElement.style.left = `${e.clientX - 20}px`;
+            draggedItemElement.style.top = `${e.clientY - 20}px`;
+        }
+    }
+    
+    handleMouseUp(e) {
+        // If we have a dragged item but didn't drop it on a valid target, return it
+        if (draggedItem && draggedItemElement) {
+            document.body.removeChild(draggedItemElement);
+            draggedItem = null;
+            draggedItemSource = null;
+            draggedItemSlot = null;
+            draggedItemElement = null;
+        }
+        
+        // Remove event listeners
+        document.removeEventListener('mousemove', this.handleMouseMove);
+        document.removeEventListener('mouseup', this.handleMouseUp);
+    }
+    
+    updateSlot(index) {
+        const slot = this.slotElements[index];
+        const item = this.inventory.getItem(index);
+        
+        // Clear slot
+        slot.innerHTML = '';
+        
+        if (item) {
+            // Create item visual
+            const itemVisual = document.createElement('div');
+            itemVisual.style.width = '36px';
+            itemVisual.style.height = '36px';
+            itemVisual.style.backgroundColor = item.color;
+            itemVisual.style.border = `2px solid ${item.getRarityColor()}`;
+            itemVisual.style.borderRadius = '3px';
+            
+            // Add tooltip
+            slot.title = `${item.name}\n${item.description}\nLevel ${item.level} ${item.rarity}`;
+            
+            slot.appendChild(itemVisual);
+        } else {
+            slot.title = '';
+        }
+    }
+    
+    updateAllSlots() {
+        for (let i = 0; i < this.inventory.size; i++) {
+            this.updateSlot(i);
+        }
+    }
+    
+    show() {
+        this.container.style.display = 'flex';
+        this.isVisible = true;
+    }
+    
+    hide() {
+        this.container.style.display = 'none';
+        this.isVisible = false;
+    }
+    
+    toggle() {
+        if (this.isVisible) {
+            this.hide();
+        } else {
+            this.show();
+        }
+    }
+}
+
 // Equipment Item class
 class EquipmentItem {
     constructor(options = {}) {
@@ -126,6 +482,9 @@ class BagItem extends EquipmentItem {
         this.type = 'bag';
         this.isOpen = false; // Whether the bag window is open
         this.windowUI = null; // Reference to the bag window UI
+        
+        // Ensure bag has a unique ID
+        this.id = options.id || `bag_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     }
     
     // Add an item to the bag
@@ -133,6 +492,9 @@ class BagItem extends EquipmentItem {
         if (slotIndex >= 0 && slotIndex < this.slots) {
             if (this.contents[slotIndex] === null) {
                 this.contents[slotIndex] = item;
+                if (this.windowUI) {
+                    this.windowUI.updateSlot(slotIndex);
+                }
                 return true;
             }
         }
@@ -144,6 +506,9 @@ class BagItem extends EquipmentItem {
         if (slotIndex >= 0 && slotIndex < this.slots && this.contents[slotIndex] !== null) {
             const item = this.contents[slotIndex];
             this.contents[slotIndex] = null;
+            if (this.windowUI) {
+                this.windowUI.updateSlot(slotIndex);
+            }
             return item;
         }
         return null;
@@ -205,7 +570,7 @@ class BagWindowUI {
         this.container.style.width = `${this.width}px`;
         this.container.style.height = `${this.height}px`;
         this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-        this.container.style.border = '2px solid #555';
+        this.container.style.border = '2px solid rgb(0, 233, 150)';
         this.container.style.borderRadius = '5px';
         this.container.style.padding = '5px';
         this.container.style.zIndex = '200'; // Higher than other UI elements
@@ -228,6 +593,7 @@ class BagWindowUI {
         const title = document.createElement('div');
         title.textContent = this.bag.name;
         title.style.fontWeight = 'bold';
+        title.style.color = 'rgb(0, 233, 150)';
         header.appendChild(title);
         
         // Add close button
@@ -235,7 +601,7 @@ class BagWindowUI {
         closeButton.textContent = '✕';
         closeButton.style.backgroundColor = 'transparent';
         closeButton.style.border = 'none';
-        closeButton.style.color = 'white';
+        closeButton.style.color = 'rgb(0, 233, 150)';
         closeButton.style.fontSize = '16px';
         closeButton.style.cursor = 'pointer';
         closeButton.style.padding = '0 5px';
@@ -248,190 +614,246 @@ class BagWindowUI {
             this.dragOffsetX = e.clientX - this.container.offsetLeft;
             this.dragOffsetY = e.clientY - this.container.offsetTop;
             
-            // Prevent text selection during drag
-            e.preventDefault();
+            // Add event listeners for dragging
+            document.addEventListener('mousemove', this.handleMouseMove);
+            document.addEventListener('mouseup', this.handleMouseUp);
         });
         
-        // Add the header to the window
         this.container.appendChild(header);
         
-        // Create the slots container
+        // Create slots container
         const slotsContainer = document.createElement('div');
         slotsContainer.className = 'bag-slots';
         slotsContainer.style.display = 'grid';
-        slotsContainer.style.gridTemplateColumns = 'repeat(4, 1fr)'; // 4 slots per row
+        slotsContainer.style.gridTemplateColumns = 'repeat(4, 1fr)';
         slotsContainer.style.gap = '5px';
         slotsContainer.style.padding = '5px';
         
         // Create slots
         for (let i = 0; i < this.bag.slots; i++) {
-            const slotElement = this.createSlotElement(i);
-            slotsContainer.appendChild(slotElement);
-            this.slotElements.push(slotElement);
+            const slot = this.createSlotElement(i);
+            slotsContainer.appendChild(slot);
+            this.slotElements.push(slot);
         }
         
-        // Add the slots container to the window
         this.container.appendChild(slotsContainer);
         
-        // Add the window to the document
+        // Add to document
         document.body.appendChild(this.container);
         
-        // Add global mouse event listeners for dragging
-        document.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        document.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        // Bind event handlers
+        this.handleMouseMove = this.handleMouseMove.bind(this);
+        this.handleMouseUp = this.handleMouseUp.bind(this);
         
-        // Update the slots with current contents
+        // Update all slots
         this.updateAllSlots();
     }
     
     createSlotElement(slotIndex) {
-        // Create slot container
-        const slotElement = document.createElement('div');
-        slotElement.className = `bag-slot slot-${slotIndex}`;
-        slotElement.dataset.slotIndex = slotIndex;
-        slotElement.style.width = '50px';
-        slotElement.style.height = '50px';
-        slotElement.style.backgroundColor = 'rgba(40, 40, 40, 0.8)';
-        slotElement.style.border = '1px solid #555';
-        slotElement.style.borderRadius = '3px';
-        slotElement.style.display = 'flex';
-        slotElement.style.justifyContent = 'center';
-        slotElement.style.alignItems = 'center';
-        slotElement.style.position = 'relative';
-        slotElement.style.cursor = 'pointer';
+        const slot = document.createElement('div');
+        slot.className = 'bag-slot';
+        slot.dataset.slotIndex = slotIndex;
+        slot.style.width = '40px';
+        slot.style.height = '40px';
+        slot.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        slot.style.border = '1px solid rgb(0, 233, 150)';
+        slot.style.borderRadius = '3px';
+        slot.style.display = 'flex';
+        slot.style.justifyContent = 'center';
+        slot.style.alignItems = 'center';
+        slot.style.position = 'relative';
+        slot.style.cursor = 'pointer';
         
-        // Add click handler
-        slotElement.addEventListener('click', () => {
-            this.handleSlotClick(slotIndex);
+        // Hover effect
+        slot.addEventListener('mouseover', () => {
+            slot.style.boxShadow = '0 0 5px rgba(0, 233, 150, 0.5)';
+            slot.style.backgroundColor = 'rgba(0, 50, 30, 0.5)';
         });
         
-        // Add drag and drop handlers
-        slotElement.setAttribute('draggable', 'true');
+        slot.addEventListener('mouseout', () => {
+            slot.style.boxShadow = 'none';
+            slot.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        });
         
-        slotElement.addEventListener('dragstart', (e) => {
-            const item = this.bag.getItem(slotIndex);
-            if (item) {
-                // Set the drag data
-                draggedItem = item;
-                draggedItemSource = 'bag';
-                draggedItemSlot = slotIndex;
-                draggedItemElement = e.target;
-                
-                // Create a drag image
-                const dragImage = document.createElement('div');
-                dragImage.style.width = '40px';
-                dragImage.style.height = '40px';
-                dragImage.style.backgroundColor = item.color;
-                dragImage.style.border = `2px solid ${item.getRarityColor()}`;
-                dragImage.style.position = 'absolute';
-                dragImage.style.top = '-1000px';
-                document.body.appendChild(dragImage);
-                
-                e.dataTransfer.setDragImage(dragImage, 20, 20);
-                e.dataTransfer.effectAllowed = 'move';
-                
-                // Add a class to show it's being dragged
-                slotElement.classList.add('dragging');
-                
-                // Remove the drag image after a short delay
-                setTimeout(() => {
-                    document.body.removeChild(dragImage);
-                }, 100);
-            } else {
-                // Prevent dragging empty slots
+        // Click handlers for drag and drop
+        slot.addEventListener('mousedown', (e) => {
+            // Left click - drag item
+            if (e.button === 0) {
+                this.handleSlotClick(slotIndex);
+            }
+            // Right click - context menu or use item
+            else if (e.button === 2) {
                 e.preventDefault();
+                this.handleSlotRightClick(slotIndex);
             }
         });
         
-        slotElement.addEventListener('dragend', () => {
-            slotElement.classList.remove('dragging');
+        // Prevent context menu on right click
+        slot.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+        
+        return slot;
+    }
+    
+    handleSlotClick(slotIndex) {
+        const item = this.bag.getItem(slotIndex);
+        
+        // If we already have a dragged item, place it in this slot
+        if (draggedItem) {
+            // If there's an item in this slot, swap it
+            const currentItem = this.bag.getItem(slotIndex);
             
-            // Reset drag state
+            // Place the dragged item in this slot
+            this.bag.contents[slotIndex] = draggedItem;
+            this.updateSlot(slotIndex);
+            
+            // If there was an item in this slot, put it where the dragged item was
+            if (currentItem) {
+                if (draggedItemSource === 'inventory') {
+                    window.playerInventory.setItem(draggedItemSlot, currentItem);
+                } else if (draggedItemSource === 'equipment') {
+                    window.equipmentManager.equipItem(currentItem, draggedItemSlot);
+                } else if (draggedItemSource === 'quickslot') {
+                    window.equipmentManager.quickSlots[draggedItemSlot] = currentItem;
+                    window.equipmentManager.ui.updateSlot(draggedItemSlot, true);
+                } else if (draggedItemSource === 'bag') {
+                    // Get the bag and slot
+                    const [bagId, bagSlot] = draggedItemSlot.split(':');
+                    const bag = window.equipmentManager.getBagById(bagId);
+                    if (bag) {
+                        bag.contents[bagSlot] = currentItem;
+                        if (bag.windowUI) {
+                            bag.windowUI.updateSlot(bagSlot);
+                        }
+                    }
+                }
+            } else {
+                // Remove the item from its original location
+                if (draggedItemSource === 'inventory') {
+                    window.playerInventory.removeItem(draggedItemSlot);
+                } else if (draggedItemSource === 'equipment') {
+                    window.equipmentManager.unequipItem(draggedItemSlot);
+                } else if (draggedItemSource === 'quickslot') {
+                    window.equipmentManager.quickSlots[draggedItemSlot] = null;
+                    window.equipmentManager.ui.updateSlot(draggedItemSlot, true);
+                } else if (draggedItemSource === 'bag') {
+                    // Get the bag and slot
+                    const [bagId, bagSlot] = draggedItemSlot.split(':');
+                    const bag = window.equipmentManager.getBagById(bagId);
+                    if (bag) {
+                        bag.contents[bagSlot] = null;
+                        if (bag.windowUI) {
+                            bag.windowUI.updateSlot(bagSlot);
+                        }
+                    }
+                }
+            }
+            
+            // Clear dragged item
+            if (draggedItemElement) {
+                document.body.removeChild(draggedItemElement);
+            }
             draggedItem = null;
             draggedItemSource = null;
             draggedItemSlot = null;
             draggedItemElement = null;
-        });
+            
+            return;
+        }
         
-        return slotElement;
+        // If there's an item in this slot, start dragging it
+        if (item) {
+            draggedItem = item;
+            draggedItemSource = 'bag';
+            draggedItemSlot = `${this.bag.id}:${slotIndex}`;
+            
+            // Create a visual element for dragging
+            draggedItemElement = document.createElement('div');
+            draggedItemElement.style.position = 'absolute';
+            draggedItemElement.style.width = '40px';
+            draggedItemElement.style.height = '40px';
+            draggedItemElement.style.backgroundColor = item.color;
+            draggedItemElement.style.border = `2px solid ${item.getRarityColor()}`;
+            draggedItemElement.style.borderRadius = '3px';
+            draggedItemElement.style.zIndex = '1000';
+            draggedItemElement.style.pointerEvents = 'none';
+            draggedItemElement.style.opacity = '0.8';
+            
+            // Position at mouse cursor
+            const mouseX = event.clientX;
+            const mouseY = event.clientY;
+            draggedItemElement.style.left = `${mouseX - 20}px`;
+            draggedItemElement.style.top = `${mouseY - 20}px`;
+            
+            document.body.appendChild(draggedItemElement);
+            
+            // Add mouse move handler
+            document.addEventListener('mousemove', this.handleMouseMove);
+            
+            // Add mouse up handler
+            document.addEventListener('mouseup', this.handleMouseUp);
+            
+            // Remove the item from the bag
+            this.bag.contents[slotIndex] = null;
+            this.updateSlot(slotIndex);
+        }
     }
     
-    handleSlotClick(slotIndex) {
-        console.log(`Clicked on bag slot ${slotIndex}`);
-        
-        // Get the item in this slot
+    handleSlotRightClick(slotIndex) {
         const item = this.bag.getItem(slotIndex);
         
         if (item) {
-            // For now, just log the item info
-            console.log(`Bag slot ${slotIndex} contains: ${item.name}`);
-            
-            // Here you could implement item usage, moving to inventory, etc.
-            // But don't remove the item by default
-        } else {
-            // In a real implementation, this would allow adding an item from inventory
-            console.log(`Bag slot ${slotIndex} is empty`);
+            // If it's a tool or weapon, equip to quickslot
+            if (item.type === 'tool' || item.type === 'weapon') {
+                // Find first empty quickslot
+                for (const key in QUICK_SLOTS) {
+                    const slotName = QUICK_SLOTS[key];
+                    if (!window.equipmentManager.quickSlots[slotName]) {
+                        // Add to quickslot
+                        window.equipmentManager.quickSlots[slotName] = item;
+                        window.equipmentManager.ui.updateSlot(slotName, true);
+                        
+                        // Remove from bag
+                        this.bag.removeItem(slotIndex);
+                        this.updateSlot(slotIndex);
+                        break;
+                    }
+                }
+            }
+            // If it's equipment, try to equip it
+            else if (item.slot && Object.values(EQUIPMENT_SLOTS).includes(item.slot)) {
+                if (window.equipmentManager.equipItem(item, item.slot)) {
+                    // Remove from bag if successfully equipped
+                    this.bag.removeItem(slotIndex);
+                    this.updateSlot(slotIndex);
+                }
+            }
         }
     }
     
     updateSlot(slotIndex) {
-        const slotElement = this.slotElements[slotIndex];
-        if (!slotElement) return;
-        
-        // Clear the slot
-        slotElement.innerHTML = '';
-        
-        // Get the item in this slot
+        const slot = this.slotElements[slotIndex];
         const item = this.bag.getItem(slotIndex);
         
+        // Clear slot
+        slot.innerHTML = '';
+        
         if (item) {
-            // Create item representation
-            const itemElement = document.createElement('div');
-            itemElement.style.width = '40px';
-            itemElement.style.height = '40px';
-            itemElement.style.backgroundColor = item.color;
-            itemElement.style.border = `2px solid ${item.getRarityColor()}`;
-            itemElement.style.borderRadius = '3px';
-            
-            // If there's an icon, use it
-            if (item.icon) {
-                const iconImg = document.createElement('img');
-                iconImg.src = item.icon;
-                iconImg.style.width = '100%';
-                iconImg.style.height = '100%';
-                iconImg.style.objectFit = 'contain';
-                
-                // Handle image loading errors
-                iconImg.onerror = () => {
-                    console.warn(`Failed to load icon: ${item.icon}`);
-                    iconImg.style.display = 'none';
-                    itemElement.textContent = item.name.charAt(0);
-                    itemElement.style.display = 'flex';
-                    itemElement.style.justifyContent = 'center';
-                    itemElement.style.alignItems = 'center';
-                    itemElement.style.color = 'white';
-                    itemElement.style.fontWeight = 'bold';
-                };
-                
-                itemElement.appendChild(iconImg);
-            } else {
-                // Otherwise show first letter of item name
-                itemElement.textContent = item.name.charAt(0);
-                itemElement.style.display = 'flex';
-                itemElement.style.justifyContent = 'center';
-                itemElement.style.alignItems = 'center';
-                itemElement.style.color = 'white';
-                itemElement.style.fontWeight = 'bold';
-            }
+            // Create item visual
+            const itemVisual = document.createElement('div');
+            itemVisual.style.width = '36px';
+            itemVisual.style.height = '36px';
+            itemVisual.style.backgroundColor = item.color;
+            itemVisual.style.border = `2px solid ${item.getRarityColor()}`;
+            itemVisual.style.borderRadius = '3px';
             
             // Add tooltip
-            slotElement.title = `${item.name}\n${item.description}`;
+            slot.title = `${item.name}\n${item.description}\nLevel ${item.level} ${item.rarity}`;
             
-            // Add the item element to the slot
-            slotElement.appendChild(itemElement);
+            slot.appendChild(itemVisual);
         } else {
-            // Empty slot
-            slotElement.title = '';
+            slot.title = '';
         }
     }
     
@@ -443,31 +865,23 @@ class BagWindowUI {
     
     handleMouseMove(e) {
         if (this.isDragging) {
-            const newX = e.clientX - this.dragOffsetX;
-            const newY = e.clientY - this.dragOffsetY;
-            
-            // Keep the window within the viewport
-            const maxX = window.innerWidth - this.width;
-            const maxY = window.innerHeight - this.height;
-            
-            this.x = Math.max(0, Math.min(newX, maxX));
-            this.y = Math.max(0, Math.min(newY, maxY));
-            
-            this.container.style.left = `${this.x}px`;
-            this.container.style.top = `${this.y}px`;
+            this.container.style.left = `${e.clientX - this.dragOffsetX}px`;
+            this.container.style.top = `${e.clientY - this.dragOffsetY}px`;
+        }
+        
+        if (draggedItemElement) {
+            draggedItemElement.style.left = `${e.clientX - 20}px`;
+            draggedItemElement.style.top = `${e.clientY - 20}px`;
         }
     }
     
     handleMouseUp() {
         this.isDragging = false;
+        document.removeEventListener('mousemove', this.handleMouseMove);
+        document.removeEventListener('mouseup', this.handleMouseUp);
     }
     
     close() {
-        // Remove event listeners
-        document.removeEventListener('mousemove', this.handleMouseMove.bind(this));
-        document.removeEventListener('mouseup', this.handleMouseUp.bind(this));
-        
-        // Remove the window from the document
         if (this.container && this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
         }
@@ -481,6 +895,7 @@ class EquipmentManager {
         this.slots = {};
         this.quickSlots = {};
         this.activeQuickSlot = 'quickSlot1'; // Default active slot
+        this.inventory = null; // Reference to player inventory
         
         // Initialize all equipment slots as empty
         for (const slot in EQUIPMENT_SLOTS) {
@@ -497,6 +912,34 @@ class EquipmentManager {
         
         // Show the quickbar UI immediately
         this.ui.showQuickbar();
+    }
+    
+    // Set the player inventory reference
+    setInventory(inventory) {
+        this.inventory = inventory;
+    }
+    
+    // Get a bag by its ID
+    getBagById(bagId) {
+        // Check equipment slots for the bag
+        for (const slotName in this.slots) {
+            const item = this.slots[slotName];
+            if (item && item.type === 'bag' && item.id === bagId) {
+                return item;
+            }
+        }
+        
+        // Check inventory for the bag
+        if (this.inventory) {
+            for (let i = 0; i < this.inventory.size; i++) {
+                const item = this.inventory.getItem(i);
+                if (item && item.type === 'bag' && item.id === bagId) {
+                    return item;
+                }
+            }
+        }
+        
+        return null;
     }
     
     // Equip an item to a slot
@@ -618,20 +1061,35 @@ class EquipmentManager {
 
 // Equipment UI class
 class EquipmentUI {
-    constructor(equipmentManager) {
+    constructor(equipmentManager, options = {}) {
         this.equipmentManager = equipmentManager;
         this.isPanelVisible = false;
         this.equipmentPanel = null;
         this.quickbarPanel = null;
         this.slotElements = {};
         this.quickSlotElements = {};
+        this.options = options;
+        this.compactDisplayContainer = null;
+        this.compactSlotElements = {};
         
-        this.createUI();
+        // Create UI elements safely
+        try {
+            this.createUI();
+            
+            // Show quickbar immediately - it should always be visible
+            this.showQuickbar();
+            
+            // Show compact equipment display - always visible
+            this.createCompactEquipmentDisplay();
+        } catch (err) {
+            console.error('Error creating equipment UI:', err);
+        }
     }
     
     createUI() {
         this.createEquipmentPanel();
         this.createQuickbar();
+        this.createInventoryButton();
     }
     
     createEquipmentPanel() {
@@ -639,75 +1097,196 @@ class EquipmentUI {
         this.equipmentPanel = document.createElement('div');
         this.equipmentPanel.id = 'equipmentPanel';
         this.equipmentPanel.className = 'game-panel';
-        this.equipmentPanel.style.position = 'absolute';
-        this.equipmentPanel.style.left = '10px';
-        this.equipmentPanel.style.top = '50%';
-        this.equipmentPanel.style.transform = 'translateY(-50%)';
-        this.equipmentPanel.style.width = '180px';
-        this.equipmentPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        this.equipmentPanel.style.border = '2px solid #444';
-        this.equipmentPanel.style.borderRadius = '5px';
-        this.equipmentPanel.style.padding = '10px';
-        this.equipmentPanel.style.color = 'white';
-        this.equipmentPanel.style.display = 'none'; // Hidden by default
-        this.equipmentPanel.style.zIndex = '100';
+        this.equipmentPanel.style.position = 'fixed'; // Fixed positioning
         
-        // Create title
-        const title = document.createElement('div');
-        title.textContent = 'Equipment';
-        title.style.textAlign = 'center';
-        title.style.fontSize = '18px';
-        title.style.marginBottom = '10px';
-        title.style.borderBottom = '1px solid #555';
-        title.style.paddingBottom = '5px';
-        this.equipmentPanel.appendChild(title);
-        
-        // Create slots container
-        const slotsContainer = document.createElement('div');
-        slotsContainer.className = 'equipment-slots';
-        slotsContainer.style.display = 'grid';
-        slotsContainer.style.gridTemplateColumns = '1fr';
-        slotsContainer.style.gap = '5px';
-        this.equipmentPanel.appendChild(slotsContainer);
-        
-        // Create each equipment slot
-        for (const slotKey in EQUIPMENT_SLOTS) {
-            const slotName = EQUIPMENT_SLOTS[slotKey];
-            const slotElement = this.createSlotElement(slotName, false);
-            slotsContainer.appendChild(slotElement);
-            this.slotElements[slotName] = slotElement;
+        // Position based on options
+        if (this.options.position === 'left') {
+            this.equipmentPanel.style.left = this.options.outside ? '-250px' : '20px';
+            this.equipmentPanel.style.top = '50%';
+            this.equipmentPanel.style.transform = 'translateY(-50%)';
+        } else {
+            this.equipmentPanel.style.right = this.options.outside ? '-250px' : '20px';
+            this.equipmentPanel.style.top = '50%';
+            this.equipmentPanel.style.transform = 'translateY(-50%)';
         }
         
-        // Create hotkey guide
-        const hotkeyGuide = document.createElement('div');
-        hotkeyGuide.textContent = 'Press E to toggle equipment panel';
-        hotkeyGuide.style.textAlign = 'center';
-        hotkeyGuide.style.fontSize = '12px';
-        hotkeyGuide.style.marginTop = '10px';
-        hotkeyGuide.style.color = '#aaa';
-        this.equipmentPanel.appendChild(hotkeyGuide);
+        this.equipmentPanel.style.width = '250px';
+        this.equipmentPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.equipmentPanel.style.border = '2px solid rgb(0, 233, 150)';
+        this.equipmentPanel.style.borderRadius = '5px';
+        this.equipmentPanel.style.padding = '15px';
+        this.equipmentPanel.style.zIndex = '100';
+        this.equipmentPanel.style.display = 'none';
+        this.equipmentPanel.style.flexDirection = 'column';
+        this.equipmentPanel.style.gap = '10px';
+        this.equipmentPanel.style.boxShadow = '0 0 15px rgba(0, 233, 150, 0.3)';
+        this.equipmentPanel.style.transition = 'left 0.3s ease, right 0.3s ease';
+        
+        // Create header
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.marginBottom = '10px';
+        
+        const title = document.createElement('h2');
+        title.textContent = 'Equipment';
+        title.style.color = 'rgb(0, 233, 150)';
+        title.style.margin = '0';
+        header.appendChild(title);
+        
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '✕';
+        closeButton.style.backgroundColor = 'transparent';
+        closeButton.style.border = 'none';
+        closeButton.style.color = 'rgb(0, 233, 150)';
+        closeButton.style.fontSize = '20px';
+        closeButton.style.cursor = 'pointer';
+        closeButton.addEventListener('click', () => this.hideEquipmentPanel());
+        header.appendChild(closeButton);
+        
+        this.equipmentPanel.appendChild(header);
+        
+        // Create grid container for equipment slots
+        const gridContainer = document.createElement('div');
+        gridContainer.style.display = 'grid';
+        gridContainer.style.gridTemplateColumns = 'repeat(3, 1fr)';
+        gridContainer.style.gridTemplateRows = 'repeat(4, auto)';
+        gridContainer.style.gap = '10px';
+        gridContainer.style.justifyItems = 'center';
+        this.equipmentPanel.appendChild(gridContainer);
+        
+        // Define the grid layout with slot IDs exactly as requested
+        const gridLayout = [
+            // Row 1: Necklace, Helmet, Bag
+            { slotId: EQUIPMENT_SLOTS.NECKLACE, name: 'Necklace', icon: '📿', col: 1, row: 1 },
+            { slotId: EQUIPMENT_SLOTS.HEAD, name: 'Helmet', icon: '👑', col: 2, row: 1 },
+            { slotId: EQUIPMENT_SLOTS.BACKPACK, name: 'Bag', icon: '🎒', col: 3, row: 1 },
+            
+            // Row 2: Left Hand, Chest/Armor, Right Hand
+            { slotId: EQUIPMENT_SLOTS.LEFT_HAND, name: 'Left Hand', icon: '🛡️', col: 1, row: 2 },
+            { slotId: EQUIPMENT_SLOTS.CHEST, name: 'Armor', icon: '👕', col: 2, row: 2 },
+            { slotId: EQUIPMENT_SLOTS.RIGHT_HAND, name: 'Right Hand', icon: '⚔️', col: 3, row: 2 },
+            
+            // Row 3: Left Ring, Legs, Right Ring
+            { slotId: EQUIPMENT_SLOTS.RING_LEFT, name: 'Left Ring', icon: '💍', col: 1, row: 3 },
+            { slotId: EQUIPMENT_SLOTS.LEGS, name: 'Legs', icon: '👖', col: 2, row: 3 },
+            { slotId: EQUIPMENT_SLOTS.RING_RIGHT, name: 'Right Ring', icon: '💍', col: 3, row: 3 },
+            
+            // Row 4: Empty, Boots/Feet, Empty
+            { slotId: EQUIPMENT_SLOTS.FEET, name: 'Boots', icon: '👢', col: 2, row: 4 }
+        ];
+        
+        // Create slots based on the grid layout
+        for (const slot of gridLayout) {
+            const slotElement = this.createSlotElement(slot.slotId, false);
+            
+            // Position in the grid
+            slotElement.style.gridColumn = slot.col;
+            slotElement.style.gridRow = slot.row;
+            
+            gridContainer.appendChild(slotElement);
+            this.slotElements[slot.slotId] = slotElement;
+        }
+        
+        // Add inventory button
+        const inventoryButton = document.createElement('button');
+        inventoryButton.textContent = 'Open Inventory';
+        inventoryButton.style.backgroundColor = 'rgba(0, 233, 150, 0.2)';
+        inventoryButton.style.border = '1px solid rgb(0, 233, 150)';
+        inventoryButton.style.borderRadius = '5px';
+        inventoryButton.style.color = 'rgb(0, 233, 150)';
+        inventoryButton.style.padding = '8px';
+        inventoryButton.style.marginTop = '10px';
+        inventoryButton.style.cursor = 'pointer';
+        inventoryButton.style.width = '100%';
+        inventoryButton.style.transition = 'background-color 0.2s';
+        
+        inventoryButton.addEventListener('mouseover', () => {
+            inventoryButton.style.backgroundColor = 'rgba(0, 233, 150, 0.4)';
+        });
+        
+        inventoryButton.addEventListener('mouseout', () => {
+            inventoryButton.style.backgroundColor = 'rgba(0, 233, 150, 0.2)';
+        });
+        
+        inventoryButton.addEventListener('click', () => {
+            if (window.playerInventory && window.playerInventoryUI) {
+                window.playerInventoryUI.toggle();
+            }
+        });
+        
+        this.equipmentPanel.appendChild(inventoryButton);
         
         // Add to document
         document.body.appendChild(this.equipmentPanel);
+    }
+    
+    createInventoryButton() {
+        // Create a floating button to open inventory
+        const inventoryButton = document.createElement('div');
+        inventoryButton.className = 'inventory-button';
+        inventoryButton.style.position = 'fixed';
+        inventoryButton.style.top = '20px';
+        inventoryButton.style.left = '20px';
+        inventoryButton.style.width = '50px';
+        inventoryButton.style.height = '50px';
+        inventoryButton.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        inventoryButton.style.border = '2px solid rgb(0, 233, 150)';
+        inventoryButton.style.borderRadius = '50%';
+        inventoryButton.style.display = 'flex';
+        inventoryButton.style.justifyContent = 'center';
+        inventoryButton.style.alignItems = 'center';
+        inventoryButton.style.cursor = 'pointer';
+        inventoryButton.style.zIndex = '100';
+        inventoryButton.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.3)';
+        inventoryButton.style.fontSize = '24px';
+        inventoryButton.textContent = '🎒';
+        
+        // Hover effect
+        inventoryButton.addEventListener('mouseover', () => {
+            inventoryButton.style.boxShadow = '0 0 15px rgba(0, 233, 150, 0.5)';
+            inventoryButton.style.transform = 'scale(1.1)';
+        });
+        
+        inventoryButton.addEventListener('mouseout', () => {
+            inventoryButton.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.3)';
+            inventoryButton.style.transform = 'scale(1)';
+        });
+        
+        // Click handler
+        inventoryButton.addEventListener('click', () => {
+            if (window.playerInventory && window.playerInventoryUI) {
+                window.playerInventoryUI.toggle();
+            }
+        });
+        
+        // Add tooltip
+        inventoryButton.title = 'Open Inventory (I)';
+        
+        // Add to document
+        document.body.appendChild(inventoryButton);
+        this.inventoryButton = inventoryButton;
     }
     
     createQuickbar() {
         console.log('Creating quickslots panel');
         
         // Create the quickslots container
-        this.quickSlotsPanel = document.createElement('div');
-        this.quickSlotsPanel.className = 'quickslots-panel';
-        this.quickSlotsPanel.style.position = 'absolute';
-        this.quickSlotsPanel.style.bottom = '20px';
-        this.quickSlotsPanel.style.left = '50%';
-        this.quickSlotsPanel.style.transform = 'translateX(-50%)';
-        this.quickSlotsPanel.style.display = 'flex';
-        this.quickSlotsPanel.style.gap = '8px'; // Slightly smaller gap to fit all slots
-        this.quickSlotsPanel.style.padding = '10px';
-        this.quickSlotsPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        this.quickSlotsPanel.style.border = '2px solid #555';
-        this.quickSlotsPanel.style.borderRadius = '5px';
-        this.quickSlotsPanel.style.zIndex = '100';
+        this.quickbarPanel = document.createElement('div');
+        this.quickbarPanel.className = 'quickslots-panel';
+        this.quickbarPanel.style.position = 'fixed'; // Change to fixed positioning
+        this.quickbarPanel.style.bottom = '20px';
+        this.quickbarPanel.style.left = '50%';
+        this.quickbarPanel.style.transform = 'translateX(-50%)';
+        this.quickbarPanel.style.display = 'flex';
+        this.quickbarPanel.style.gap = '8px'; // Slightly smaller gap to fit all slots
+        this.quickbarPanel.style.padding = '10px';
+        this.quickbarPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+        this.quickbarPanel.style.border = '2px solid rgb(0, 233, 150)'; // Match the equipment panel
+        this.quickbarPanel.style.borderRadius = '5px';
+        this.quickbarPanel.style.zIndex = '100';
+        this.quickbarPanel.style.boxShadow = '0 0 15px rgba(0, 233, 150, 0.3)'; // Match the equipment panel
         
         // Create quickslots
         this.quickSlotElements = {};
@@ -718,17 +1297,17 @@ class EquipmentUI {
             const key = i;
             
             const slotElement = this.createQuickSlotElement(slotName, key);
-            this.quickSlotsPanel.appendChild(slotElement);
+            this.quickbarPanel.appendChild(slotElement);
             this.quickSlotElements[slotName] = slotElement;
         }
         
         // Add slot 0 (last)
         const slot0Element = this.createQuickSlotElement('quickSlot0', 0);
-        this.quickSlotsPanel.appendChild(slot0Element);
+        this.quickbarPanel.appendChild(slot0Element);
         this.quickSlotElements['quickSlot0'] = slot0Element;
         
         // Add the quickslots panel to the document
-        document.body.appendChild(this.quickSlotsPanel);
+        document.body.appendChild(this.quickbarPanel);
         
         console.log('Quickslots panel created with elements:', this.quickSlotElements);
         
@@ -755,63 +1334,78 @@ class EquipmentUI {
         const slotElement = document.createElement('div');
         slotElement.className = `equipment-slot ${slotName}`;
         slotElement.dataset.slot = slotName;
+        
+        // Style the slot
+        slotElement.style.width = '60px';
+        slotElement.style.height = '60px';
+        slotElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        slotElement.style.border = '2px solid rgb(0, 233, 150)';
+        slotElement.style.borderRadius = '5px';
         slotElement.style.display = 'flex';
+        slotElement.style.flexDirection = 'column';
         slotElement.style.alignItems = 'center';
-        slotElement.style.backgroundColor = 'rgba(40, 40, 40, 0.8)';
-        slotElement.style.border = '1px solid #555';
-        slotElement.style.borderRadius = '3px';
-        slotElement.style.padding = '5px';
+        slotElement.style.justifyContent = 'center';
+        slotElement.style.position = 'relative';
         slotElement.style.cursor = 'pointer';
+        slotElement.style.transition = 'all 0.2s ease';
+        
+        // Hover effect
+        slotElement.addEventListener('mouseover', () => {
+            slotElement.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.5)';
+            slotElement.style.backgroundColor = 'rgba(0, 50, 30, 0.5)';
+        });
+        
+        slotElement.addEventListener('mouseout', () => {
+            slotElement.style.boxShadow = 'none';
+            slotElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        });
         
         // Create slot icon container
         const iconContainer = document.createElement('div');
         iconContainer.className = 'slot-icon';
-        iconContainer.style.width = '30px';
-        iconContainer.style.height = '30px';
+        iconContainer.style.width = '40px';
+        iconContainer.style.height = '40px';
         iconContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-        iconContainer.style.border = '1px solid #666';
+        iconContainer.style.border = '1px solid rgb(0, 233, 150)';
         iconContainer.style.borderRadius = '3px';
-        iconContainer.style.marginRight = '8px';
-        iconContainer.style.position = 'relative';
         iconContainer.style.display = 'flex';
         iconContainer.style.justifyContent = 'center';
         iconContainer.style.alignItems = 'center';
-        iconContainer.style.color = '#999';
+        iconContainer.style.color = 'rgb(0, 233, 150)';
+        iconContainer.style.fontSize = '24px';
         
         // Add slot icon or placeholder
         const slotIcon = document.createElement('div');
         slotIcon.textContent = this.getSlotEmoji(slotName);
-        slotIcon.style.fontSize = '16px';
+        slotIcon.style.fontSize = '20px';
         iconContainer.appendChild(slotIcon);
         
         slotElement.appendChild(iconContainer);
         
-        // Create slot info container
-        const infoContainer = document.createElement('div');
-        infoContainer.className = 'slot-info';
-        infoContainer.style.flex = '1';
-        infoContainer.style.overflow = 'hidden';
-        
-        // Create slot name
+        // Create slot name label
         const slotLabel = document.createElement('div');
         slotLabel.className = 'slot-name';
         slotLabel.textContent = this.formatSlotName(slotName);
-        slotLabel.style.fontSize = '12px';
-        slotLabel.style.fontWeight = 'bold';
-        infoContainer.appendChild(slotLabel);
+        slotLabel.style.fontSize = '10px';
+        slotLabel.style.marginTop = '3px';
+        slotLabel.style.color = 'white';
+        slotLabel.style.textAlign = 'center';
+        slotElement.appendChild(slotLabel);
         
         // Create slot item (empty by default)
         const slotItemName = document.createElement('div');
         slotItemName.className = 'slot-item-name';
-        slotItemName.textContent = 'Empty';
-        slotItemName.style.fontSize = '10px';
+        slotItemName.textContent = '';
+        slotItemName.style.fontSize = '9px';
         slotItemName.style.color = '#aaa';
-        slotItemName.style.whiteSpace = 'nowrap';
+        slotItemName.style.position = 'absolute';
+        slotItemName.style.bottom = '2px';
+        slotItemName.style.width = '100%';
+        slotItemName.style.textAlign = 'center';
         slotItemName.style.overflow = 'hidden';
         slotItemName.style.textOverflow = 'ellipsis';
-        infoContainer.appendChild(slotItemName);
-        
-        slotElement.appendChild(infoContainer);
+        slotItemName.style.whiteSpace = 'nowrap';
+        slotElement.appendChild(slotItemName);
         
         // Add click handler
         slotElement.addEventListener('click', () => {
@@ -836,85 +1430,64 @@ class EquipmentUI {
     
     createQuickSlotElement(slotName, key) {
         const slotElement = document.createElement('div');
-        slotElement.className = 'quickslot';
-        slotElement.dataset.slotName = slotName;
+        slotElement.className = 'quick-slot';
+        slotElement.dataset.slot = slotName;
         
-        // Set slot styles
-        slotElement.style.width = '50px'; // Slightly smaller to fit all 10
-        slotElement.style.height = '50px';
-        slotElement.style.backgroundColor = 'rgba(40, 40, 40, 0.8)';
-        slotElement.style.border = '1px solid #555';
+        // Style quick slot
+        slotElement.style.width = '45px';
+        slotElement.style.height = '45px';
+        slotElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        slotElement.style.border = '2px solid rgb(0, 233, 150)';
         slotElement.style.borderRadius = '5px';
         slotElement.style.display = 'flex';
-        slotElement.style.justifyContent = 'center';
         slotElement.style.alignItems = 'center';
+        slotElement.style.justifyContent = 'center';
         slotElement.style.position = 'relative';
         slotElement.style.cursor = 'pointer';
-        slotElement.style.boxShadow = '0 0 5px rgba(0, 0, 0, 0.3)';
+        slotElement.style.transition = 'all 0.2s ease';
         
-        // Add click handler
+        // Hover effect
+        slotElement.addEventListener('mouseover', () => {
+            slotElement.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.5)';
+            slotElement.style.backgroundColor = 'rgba(0, 50, 30, 0.5)';
+        });
+        
+        slotElement.addEventListener('mouseout', () => {
+            slotElement.style.boxShadow = 'none';
+            slotElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        });
+        
+        // Add number indicator
+        const number = document.createElement('div');
+        number.textContent = key;
+        number.style.position = 'absolute';
+        number.style.top = '2px';
+        number.style.left = '2px';
+        number.style.fontSize = '10px';
+        number.style.color = 'rgb(0, 233, 150)';
+        number.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        number.style.padding = '1px 3px';
+        number.style.borderRadius = '3px';
+        slotElement.appendChild(number);
+        
+        // Add item placeholder
+        const itemPlaceholder = document.createElement('div');
+        itemPlaceholder.className = 'slot-icon-placeholder';
+        itemPlaceholder.style.width = '35px';
+        itemPlaceholder.style.height = '35px';
+        itemPlaceholder.style.display = 'flex';
+        itemPlaceholder.style.alignItems = 'center';
+        itemPlaceholder.style.justifyContent = 'center';
+        itemPlaceholder.style.color = 'rgba(0, 233, 150, 0.3)';
+        itemPlaceholder.style.fontSize = '20px';
+        itemPlaceholder.textContent = '⚒️';
+        slotElement.appendChild(itemPlaceholder);
+        
+        // Click handler for quickslot
         slotElement.addEventListener('click', () => {
-            this.handleSlotClick(slotName);
+            this.equipmentManager.setActiveQuickSlot(slotName);
+            this.updateActiveQuickSlot();
         });
-        
-        // Add right-click handler
-        slotElement.addEventListener('contextmenu', (e) => {
-            e.preventDefault(); // Prevent default context menu
-            
-            const item = this.equipmentManager.getEquippedItem(slotName);
-            if (item && item instanceof BagItem) {
-                // Open the bag window
-                item.open(e.clientX, e.clientY);
-            }
-        });
-        
-        // Add drag and drop handlers
-        slotElement.addEventListener('dragover', (e) => {
-            // Allow dropping
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            slotElement.classList.add('drag-over');
-        });
-        
-        slotElement.addEventListener('dragleave', () => {
-            slotElement.classList.remove('drag-over');
-        });
-        
-        slotElement.addEventListener('drop', (e) => {
-            e.preventDefault();
-            slotElement.classList.remove('drag-over');
-            
-            // Handle the drop
-            if (window.draggedWorldItem) {
-                const item = window.draggedWorldItem.item;
-                
-                // Try to equip the item
-                const success = this.equipmentManager.equipItem(item, slotName);
-                
-                if (success) {
-                    console.log(`Equipped ${item.name} to ${slotName}`);
-                    
-                    // Update the UI
-                    this.updateQuickSlot(slotName);
-                    
-                    // Remove the dragged item
-                    window.draggedWorldItem = null;
-                }
-            }
-        });
-        
-        // Add key binding text
-        const keyText = document.createElement('div');
-        keyText.textContent = key === 0 ? '0' : key.toString();
-        keyText.style.position = 'absolute';
-        keyText.style.bottom = '2px';
-        keyText.style.right = '2px';
-        keyText.style.fontSize = '10px';
-        keyText.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        keyText.style.color = 'white';
-        keyText.style.padding = '1px 3px';
-        keyText.style.borderRadius = '2px';
-        slotElement.appendChild(keyText);
         
         return slotElement;
     }
@@ -992,7 +1565,7 @@ class EquipmentUI {
             
             if (item) {
                 // Clear placeholder
-                iconPlaceholder.textContent = '';
+                if (iconPlaceholder) iconPlaceholder.textContent = '';
                 
                 // Create color block representing item
                 const itemIcon = document.createElement('div');
@@ -1002,7 +1575,7 @@ class EquipmentUI {
                 itemIcon.style.border = `2px solid ${item.getRarityColor()}`;
                 itemIcon.style.borderRadius = '4px';
                 
-                // If there's an icon image, use it
+                // If there's an icon, use it
                 if (item.icon) {
                     const iconImg = document.createElement('img');
                     iconImg.src = item.icon;
@@ -1013,7 +1586,6 @@ class EquipmentUI {
                     // Handle image loading errors
                     iconImg.onerror = () => {
                         console.warn(`Failed to load icon: ${item.icon}`);
-                        // Fallback to showing first letter of item name
                         iconImg.style.display = 'none';
                         itemIcon.textContent = item.name.charAt(0);
                         itemIcon.style.display = 'flex';
@@ -1034,13 +1606,28 @@ class EquipmentUI {
                     itemIcon.style.fontWeight = 'bold';
                 }
                 
-                iconPlaceholder.appendChild(itemIcon);
-                
                 // Add tooltip
-                slotElement.title = `${item.name}\n${item.description}`;
+                slotElement.title = `${item.name}\n${item.description}\nLevel ${item.level} ${item.rarity}`;
+                
+                // Clear slot and add the new item icon
+                slotElement.innerHTML = '';
+                slotElement.appendChild(itemIcon);
+                
+                // Add key number
+                const keyNumber = document.createElement('div');
+                keyNumber.textContent = slotName.replace('quickSlot', '');
+                keyNumber.style.position = 'absolute';
+                keyNumber.style.bottom = '0';
+                keyNumber.style.right = '0';
+                keyNumber.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                keyNumber.style.color = 'white';
+                keyNumber.style.padding = '1px 3px';
+                keyNumber.style.fontSize = '10px';
+                keyNumber.style.borderRadius = '2px';
+                slotElement.appendChild(keyNumber);
             } else {
                 // Reset to empty
-                iconPlaceholder.textContent = '';
+                if (iconPlaceholder) iconPlaceholder.textContent = '';
                 slotElement.title = '';
             }
             
@@ -1059,11 +1646,13 @@ class EquipmentUI {
             
             if (item) {
                 // Update item name
-                itemNameElement.textContent = item.name;
-                itemNameElement.style.color = item.getRarityColor();
+                if (itemNameElement) {
+                    itemNameElement.textContent = item.name;
+                    itemNameElement.style.color = item.getRarityColor();
+                }
                 
                 // Update icon if available
-                if (item.icon) {
+                if (item.icon && iconContainer) {
                     // Clear the icon container
                     iconContainer.innerHTML = '';
                     
@@ -1074,7 +1663,7 @@ class EquipmentUI {
                     iconImg.style.height = '100%';
                     iconImg.style.objectFit = 'contain';
                     iconContainer.appendChild(iconImg);
-                } else {
+                } else if (iconContainer) {
                     // Use a colored square for the item
                     iconContainer.innerHTML = '';
                     const colorSquare = document.createElement('div');
@@ -1089,19 +1678,31 @@ class EquipmentUI {
                 // Add tooltip with item details
                 slotElement.title = `${item.name}\n${item.description}\nLevel ${item.level} ${item.rarity}\nDurability: ${item.durability}/${item.maxDurability}`;
             } else {
-                // Reset to empty state
-                itemNameElement.textContent = 'Empty';
-                itemNameElement.style.color = '#aaa';
+                // Clear item name
+                if (itemNameElement) {
+                    itemNameElement.textContent = 'Empty';
+                    itemNameElement.style.color = '#999';
+                }
                 
-                // Reset icon to slot emoji
-                iconContainer.innerHTML = '';
-                const slotIcon = document.createElement('div');
-                slotIcon.textContent = this.getSlotEmoji(slotName);
-                slotIcon.style.fontSize = '16px';
-                iconContainer.appendChild(slotIcon);
+                // Clear icon
+                if (iconContainer) {
+                    iconContainer.innerHTML = '';
+                    
+                    // Add slot emoji
+                    const slotEmoji = document.createElement('div');
+                    slotEmoji.textContent = this.getSlotEmoji(slotName);
+                    slotEmoji.style.fontSize = '24px';
+                    slotEmoji.style.opacity = '0.5';
+                    iconContainer.appendChild(slotEmoji);
+                }
                 
-                // Remove tooltip
-                slotElement.title = '';
+                // Clear tooltip
+                slotElement.title = `Empty ${this.formatSlotName(slotName)} slot`;
+            }
+            
+            // Also update compact slot if it exists
+            if (this.compactSlotElements && this.compactSlotElements[slotName]) {
+                this.updateCompactSlot(slotName);
             }
         }
     }
@@ -1112,11 +1713,13 @@ class EquipmentUI {
             const slotElement = this.quickSlotElements[slotName];
             
             if (slotName === this.equipmentManager.activeQuickSlot) {
-                slotElement.style.border = '1px solid gold';
-                slotElement.style.boxShadow = '0 0 5px gold';
+                slotElement.style.border = '2px solid gold';
+                slotElement.style.boxShadow = '0 0 10px gold';
+                slotElement.style.backgroundColor = 'rgba(50, 40, 0, 0.5)';
             } else {
-                slotElement.style.border = '1px solid #555';
+                slotElement.style.border = '2px solid rgb(0, 233, 150)';
                 slotElement.style.boxShadow = 'none';
+                slotElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
             }
         }
     }
@@ -1140,7 +1743,149 @@ class EquipmentUI {
     }
     
     showQuickbar() {
-        this.quickbarPanel.style.display = 'flex';
+        try {
+            if (this.quickbarPanel) {
+                this.quickbarPanel.style.display = 'flex';
+            } else {
+                console.warn('Quickbar panel not initialized yet');
+            }
+        } catch (err) {
+            console.error('Error showing quickbar:', err);
+        }
+    }
+    
+    // Create a compact, always-visible equipment display
+    createCompactEquipmentDisplay() {
+        // Create main container
+        this.compactDisplayContainer = document.createElement('div');
+        this.compactDisplayContainer.className = 'compact-equipment-display';
+        this.compactDisplayContainer.style.position = 'fixed';
+        this.compactDisplayContainer.style.left = '20px';
+        this.compactDisplayContainer.style.top = '80px'; // Below inventory button
+        this.compactDisplayContainer.style.display = 'flex';
+        this.compactDisplayContainer.style.flexDirection = 'column';
+        this.compactDisplayContainer.style.gap = '5px';
+        this.compactDisplayContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        this.compactDisplayContainer.style.border = '2px solid rgb(0, 233, 150)';
+        this.compactDisplayContainer.style.borderRadius = '5px';
+        this.compactDisplayContainer.style.padding = '5px';
+        this.compactDisplayContainer.style.zIndex = '99';
+        this.compactDisplayContainer.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.3)';
+        
+        // Define the slots to display in compact view
+        const compactSlots = [
+            { slotId: EQUIPMENT_SLOTS.HEAD, icon: '👑' },
+            { slotId: EQUIPMENT_SLOTS.CHEST, icon: '👕' },
+            { slotId: EQUIPMENT_SLOTS.LEGS, icon: '👖' },
+            { slotId: EQUIPMENT_SLOTS.FEET, icon: '👢' },
+            { slotId: EQUIPMENT_SLOTS.LEFT_HAND, icon: '🛡️' },
+            { slotId: EQUIPMENT_SLOTS.RIGHT_HAND, icon: '⚔️' },
+            { slotId: EQUIPMENT_SLOTS.NECKLACE, icon: '📿' },
+            { slotId: EQUIPMENT_SLOTS.RING_LEFT, icon: '💍' },
+            { slotId: EQUIPMENT_SLOTS.RING_RIGHT, icon: '💍' },
+            { slotId: EQUIPMENT_SLOTS.BACKPACK, icon: '🎒' }
+        ];
+        
+        // Create each slot
+        for (const slot of compactSlots) {
+            const slotElement = this.createCompactSlotElement(slot.slotId, slot.icon);
+            this.compactDisplayContainer.appendChild(slotElement);
+            this.compactSlotElements[slot.slotId] = slotElement;
+        }
+        
+        // Add to document
+        document.body.appendChild(this.compactDisplayContainer);
+        
+        // Update all slots
+        this.updateAllCompactSlots();
+    }
+    
+    // Create a compact slot element
+    createCompactSlotElement(slotId, icon) {
+        const slotContainer = document.createElement('div');
+        slotContainer.className = 'compact-slot';
+        slotContainer.style.display = 'flex';
+        slotContainer.style.alignItems = 'center';
+        slotContainer.style.gap = '5px';
+        slotContainer.style.padding = '3px';
+        slotContainer.style.borderRadius = '3px';
+        slotContainer.style.cursor = 'pointer';
+        
+        // Add hover effect
+        slotContainer.addEventListener('mouseover', () => {
+            slotContainer.style.backgroundColor = 'rgba(0, 233, 150, 0.2)';
+        });
+        
+        slotContainer.addEventListener('mouseout', () => {
+            slotContainer.style.backgroundColor = 'transparent';
+        });
+        
+        // Add click handler to equip/unequip
+        slotContainer.addEventListener('click', () => {
+            this.handleSlotClick(slotId, false);
+        });
+        
+        // Create icon element
+        const iconElement = document.createElement('div');
+        iconElement.className = 'compact-slot-icon';
+        iconElement.textContent = icon;
+        iconElement.style.width = '20px';
+        iconElement.style.height = '20px';
+        iconElement.style.display = 'flex';
+        iconElement.style.justifyContent = 'center';
+        iconElement.style.alignItems = 'center';
+        iconElement.style.fontSize = '16px';
+        slotContainer.appendChild(iconElement);
+        
+        // Create item display element
+        const itemElement = document.createElement('div');
+        itemElement.className = 'compact-slot-item';
+        itemElement.style.width = '20px';
+        itemElement.style.height = '20px';
+        itemElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        itemElement.style.border = '1px solid rgb(0, 233, 150)';
+        itemElement.style.borderRadius = '3px';
+        slotContainer.appendChild(itemElement);
+        
+        return slotContainer;
+    }
+    
+    // Update a compact slot
+    updateCompactSlot(slotId) {
+        const slotElement = this.compactSlotElements[slotId];
+        if (!slotElement) return;
+        
+        const item = this.equipmentManager.slots[slotId];
+        const itemElement = slotElement.querySelector('.compact-slot-item');
+        
+        if (item) {
+            // Clear existing content
+            itemElement.innerHTML = '';
+            
+            // Create item visual
+            const itemVisual = document.createElement('div');
+            itemVisual.style.width = '100%';
+            itemVisual.style.height = '100%';
+            itemVisual.style.backgroundColor = item.color;
+            itemVisual.style.border = `1px solid ${item.getRarityColor()}`;
+            itemVisual.style.borderRadius = '2px';
+            
+            // Add tooltip
+            slotElement.title = `${item.name}\n${item.description}\nLevel ${item.level} ${item.rarity}`;
+            
+            itemElement.appendChild(itemVisual);
+        } else {
+            // Empty slot
+            itemElement.innerHTML = '';
+            slotElement.title = `Empty ${this.formatSlotName(slotId)} slot`;
+        }
+    }
+    
+    // Update all compact slots
+    updateAllCompactSlots() {
+        for (const slotId in this.compactSlotElements) {
+            this.updateCompactSlot(slotId);
+        }
     }
 }
 
@@ -1150,7 +1895,7 @@ const EQUIPMENT_EXAMPLES = {
         id: 'leather_helmet',
         name: 'Leather Helmet',
         description: 'A simple leather helmet that provides basic protection.',
-        slot: EQUIPMENT_SLOTS.HEAD,
+        slot: EQUIPMENT_SLOTS.HELMET,
         color: '#8B4513',
         stats: { defense: 2 },
         rarity: 'common',
@@ -1227,5 +1972,7 @@ window.Equipment = {
     BagWindowUI,
     EquipmentManager,
     EquipmentUI,
+    Inventory,
+    InventoryUI,
     EQUIPMENT_EXAMPLES
 }; 

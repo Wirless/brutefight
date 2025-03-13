@@ -52,33 +52,19 @@ function updateDebugInfo() {
     debugInfo.textContent = `Chat focused: ${isChatFocused}, Keys: W:${keys.w} A:${keys.a} S:${keys.s} D:${keys.d}`;
 }
 
-// For grass generation
-const grassPatterns = [];
+// Floor rendering
+const GRASS_TILE_SIZE = 64;
 const grassColors = [
-    'rgb(0, 233, 150)', // Base green
-    'rgb(0, 210, 140)',
-    'rgb(10, 220, 130)',
-    'rgb(20, 230, 145)',
-    'rgb(5, 225, 155)'
+    '#3a5e3a', // Dark green
+    '#4a7a4a', // Medium green
+    '#5c8a5c', // Light green
+    '#2e4e2e', // Very dark green
+    '#6b9a6b'  // Very light green
 ];
-const GRASS_TILE_SIZE = 16; // Smaller tiles for more detailed grass
+const grassPatterns = [];
 
-// Replace the rocks array with ores
-const ores = [];
-
-// Rock obstacles
-const ROCK_COUNT = 100; // Number of rocks to generate
-const ROCK_MIN_SIZE = { width: 30, height: 45 };
-const ROCK_MAX_SIZE = { width: 50, height: 80 };
-const ROCK_COLORS = [
-    '#555555', // Medium gray
-    '#666666', // Light gray
-    '#444444', // Dark gray
-    '#505050', // Slate gray
-    '#595959'  // Charcoal gray
-];
-const ROCK_SPAWN_RADIUS = 1500; // Spawn rocks within this radius of player
-const ROCK_MIN_SPACING = 200; // Minimum spacing between rocks (x and y)
+// Ore manager
+let oreManager = null;
 const PLAYER_COLLISION_RADIUS = 10; // Collision radius from player center
 
 // Player attack
@@ -143,59 +129,8 @@ function generateGrassPatterns() {
     }
 }
 
-// Replace generateRocksAroundPosition with generateOresAroundPosition
-function generateOresAroundPosition(centerX, centerY, count) {
-    const newOres = [];
-    let attempts = 0;
-    const maxAttempts = count * 10; // Limit attempts to avoid infinite loops
-    
-    while (newOres.length < count && attempts < maxAttempts) {
-        attempts++;
-        
-        // Generate random position within spawn radius
-        const angle = Math.random() * Math.PI * 2;
-        const distance = Math.random() * ROCK_SPAWN_RADIUS;
-        const x = centerX + Math.cos(angle) * distance;
-        const y = centerY + Math.sin(angle) * distance;
-        
-        // Check spacing with existing ores (square detection)
-        let tooClose = false;
-        
-        // Check against existing ores in the game
-        for (const ore of ores) {
-            if (Math.abs(x - ore.x) < ROCK_MIN_SPACING && 
-                Math.abs(y - ore.y) < ROCK_MIN_SPACING) {
-                tooClose = true;
-                break;
-            }
-        }
-        
-        // Check against ores we're about to add
-        for (const ore of newOres) {
-            if (Math.abs(x - ore.x) < ROCK_MIN_SPACING && 
-                Math.abs(y - ore.y) < ROCK_MIN_SPACING) {
-                tooClose = true;
-                break;
-            }
-        }
-        
-        // If too close to another ore, skip this one
-        if (tooClose) continue;
-        
-        // Create a new Stone ore
-        const stone = new window.Ores.Stone(x, y);
-        newOres.push(stone);
-    }
-    
-    // Add the new ores to the global ores array
-    ores.push(...newOres);
-    console.log(`Generated ${newOres.length} ores around position (${centerX}, ${centerY})`);
-    return newOres;
-}
-
 // Call once at start
 generateGrassPatterns();
-// We'll generate rocks dynamically as the player moves
 
 // Local save handling
 let localSave = null;
@@ -390,20 +325,8 @@ canvas.addEventListener('mousemove', (e) => {
 // Add mouse click for attack
 canvas.addEventListener('mousedown', (e) => {
     // Only handle left mouse button (button 0)
-    if (e.button === 0 && !isChatFocused && currentAttack) {
-        // Calculate attack direction based on mouse position
-        const playerScreenX = myPlayer.x - Math.floor(cameraX);
-        const playerScreenY = myPlayer.y - Math.floor(cameraY);
-        const direction = Math.atan2(mouseY - playerScreenY, mouseX - playerScreenX);
-        
-        // Perform attack
-        if (currentAttack.start(direction)) {
-            // Add attack message to chat
-            addChatMessage({
-                type: 'system',
-                message: `${username} swings their ${currentAttack === availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
-            });
-        }
+    if (e.button === 0 && !isChatFocused) {
+        handleAttack(e);
     }
 });
 
@@ -461,6 +384,13 @@ window.addEventListener('keydown', function(e) {
     if (key === 'e' && !isChatFocused) {
         if (equipmentManager) {
             equipmentManager.toggleEquipmentPanel();
+        }
+    }
+    
+    // Toggle inventory panel with 'I' key
+    if (key === 'i' && !isChatFocused) {
+        if (window.playerInventoryUI) {
+            window.playerInventoryUI.toggle();
         }
     }
     
@@ -545,86 +475,20 @@ function savePlayerDataLocally() {
 
 // Socket event handlers
 socket.on('loginSuccess', (data) => {
-    myPlayer = data.playerData;
+    console.log('Login successful:', data);
     
-    // If server sent a cloud save due to mismatch
-    if (data.cloudSaveForced) {
-        alert('Your local save was outdated or invalid. The server save has been downloaded.');
-        savePlayerDataLocally();
-    }
-    
-    // Center camera on player
-    cameraX = myPlayer.x - canvas.width / 2;
-    cameraY = myPlayer.y - canvas.height / 2;
-    
-    // Generate initial ores around player
-    generateOresAroundPosition(myPlayer.x, myPlayer.y, 20);
-    
-    // Switch from login panel to game panel
+    // Hide login panel and show game panel
     loginPanel.style.display = 'none';
     gamePanel.style.display = 'block';
     
-    // Add welcome message to chat
-    addChatMessage({
-        type: 'system',
-        message: `Welcome to the game, ${username}! Use WASD to move and SPACE to attack.`
-    });
+    // Set player data
+    myPlayer = data.playerData;
     
-    // Start the game loop
-    lastUpdateTime = performance.now();
-    startGameLoop();
+    // Initialize the game
+    initGame();
     
-    // Initialize attacks
-    availableAttacks = {
-        pickaxe: new window.Attacks.PickaxeAttack(myPlayer, ctx),
-        axe: new window.Attacks.AxeAttack(myPlayer, ctx)
-    };
-    currentAttack = availableAttacks.pickaxe; // Default attack
-    
-    // Initialize equipment system
-    console.log('Initializing equipment system...');
-    
-    try {
-        // Create equipment manager and UI
-        window.equipmentManager = new window.Equipment.EquipmentManager();
-        window.equipmentUI = new window.Equipment.EquipmentUI(window.equipmentManager);
-        
-        // Wait for UI to be fully created before equipping items
-        setTimeout(() => {
-            try {
-                console.log('Equipping starting items...');
-                
-                // Get example items
-                const pickaxe = window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe;
-                const axe = window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe;
-                const bag = window.Equipment.EQUIPMENT_EXAMPLES.smallBag;
-                
-                if (pickaxe && axe && bag) {
-                    // Equip axe to left hand and first quickslot
-                    window.equipmentManager.equipItem(axe, window.Equipment.EQUIPMENT_SLOTS.LEFT_HAND);
-                    window.equipmentManager.equipItem(axe, window.Equipment.QUICK_SLOTS.SLOT_1);
-                    
-                    // Equip pickaxe to right hand and second quickslot
-                    window.equipmentManager.equipItem(pickaxe, window.Equipment.EQUIPMENT_SLOTS.RIGHT_HAND);
-                    window.equipmentManager.equipItem(pickaxe, window.Equipment.QUICK_SLOTS.SLOT_2);
-                    
-                    // Equip bag to backpack
-                    window.equipmentManager.equipItem(bag, window.Equipment.EQUIPMENT_SLOTS.BACKPACK);
-                    
-                    // Set the first quickslot as active
-                    window.equipmentManager.setActiveQuickSlot(window.Equipment.QUICK_SLOTS.SLOT_1);
-                    
-                    console.log('Equipment initialized successfully');
-                } else {
-                    console.error('Failed to create example equipment items');
-                }
-            } catch (error) {
-                console.error('Error equipping items:', error);
-            }
-        }, 200); // Longer delay to ensure UI is ready
-    } catch (error) {
-        console.error('Error initializing equipment:', error);
-    }
+    // Update debug info
+    updateDebugInfo();
 });
 
 socket.on('playerList', (playersData) => {
@@ -749,24 +613,14 @@ document.addEventListener('DOMContentLoaded', function() {
     preloadSprites();
 });
 
-// Update the checkRockCollisions function to use ores
-function checkOreCollisions(newX, newY) {
-    // Quick check using player collision radius
-    for (const ore of ores) {
-        if (ore.checkCollision(newX, newY, PLAYER_COLLISION_RADIUS)) {
-            return true; // Collision detected
-        }
-    }
-    
-    return false; // No collision
+// Check for ore collisions
+function checkOreCollisions(playerX, playerY) {
+    return oreManager.checkCollision(playerX, playerY, PLAYER_COLLISION_RADIUS);
 }
 
 // Update the drawRocks function to use ores
 function drawOres() {
-    // Draw all visible ores
-    for (let i = 0; i < ores.length; i++) {
-        ores[i].draw(ctx, cameraX, cameraY);
-    }
+    oreManager.drawOres(ctx, cameraX, cameraY);
 }
 
 // Move player based on current velocity
@@ -802,7 +656,14 @@ function updatePlayerPosition(deltaTime) {
             else if (!checkOreCollisions(oldX, newY)) {
                 myPlayer.y = newY;
             }
-            // If both directions cause collisions, player doesn't move
+            // If both directions cause collisions, check if we need to push the player
+            else {
+                const newPosition = oreManager.handlePlayerCollision(oldX, oldY, PLAYER_COLLISION_RADIUS);
+                if (newPosition) {
+                    myPlayer.x = newPosition.x;
+                    myPlayer.y = newPosition.y;
+                }
+            }
         }
         
         // Calculate distance moved
@@ -820,7 +681,7 @@ function updatePlayerPosition(deltaTime) {
         // Check if we should generate more ores
         // Every 500 units of movement, generate some new ores
         if (Math.floor(distanceMoved / 500) > 0) {
-            generateOresAroundPosition(myPlayer.x, myPlayer.y, 5);
+            oreManager.generateOresAroundPosition(myPlayer.x, myPlayer.y, 5, myPlayer.x, myPlayer.y);
             distanceMoved = distanceMoved % 500;
         }
         
@@ -1268,4 +1129,144 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Preload sprites
     preloadSprites();
-}); 
+});
+
+// Handle player attack
+function handleAttack(e) {
+    if (isChatFocused || !myPlayer) return;
+    
+    // Calculate attack direction based on mouse position
+    const playerScreenX = myPlayer.x - Math.floor(cameraX);
+    const playerScreenY = myPlayer.y - Math.floor(cameraY);
+    attackDirection = Math.atan2(mouseY - playerScreenY, mouseX - playerScreenX);
+    
+    // Check if we have an attack available
+    if (currentAttack && currentAttack.start) {
+        // Use the attack system's start method
+        if (currentAttack.start(attackDirection)) {
+            // Add attack message to chat
+            addChatMessage({
+                type: 'system',
+                message: `${username} swings their ${currentAttack === availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
+            });
+            
+            // Check for ore hits
+            const attackRange = 50; // Attack range in pixels
+            const attackX = myPlayer.x + Math.cos(attackDirection) * attackRange;
+            const attackY = myPlayer.y + Math.sin(attackDirection) * attackRange;
+            
+            // Check each ore for a hit
+            const ores = oreManager.getOres();
+            for (const ore of ores) {
+                // Simple distance-based hit detection
+                const dx = ore.x - attackX;
+                const dy = ore.y - attackY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < attackRange) {
+                    // Hit the ore
+                    hitRocks.add(ore);
+                    rockHitTimes.set(ore, Date.now());
+                    
+                    // Apply damage based on the tool
+                    let damage = 10; // Default damage
+                    
+                    // If we have a tool selected, use its damage
+                    if (selectedTool && selectedTool.stats && selectedTool.stats.strength) {
+                        damage = selectedTool.stats.strength;
+                        console.log(`Using ${selectedTool.name} with strength ${damage}`);
+                    }
+                    
+                    // Apply damage to the ore
+                    ore.health -= damage;
+                    
+                    // Generate particles
+                    if (ore.generateParticles) {
+                        const particles = ore.generateParticles();
+                        rockParticles.push(...particles);
+                    }
+                    
+                    // Check if the ore is destroyed
+                    if (ore.health <= 0) {
+                        // Get drops from the ore
+                        const drops = ore.getDrops ? ore.getDrops() : [];
+                        console.log(`Ore destroyed! Drops:`, drops);
+                        
+                        // Remove the ore from the manager
+                        oreManager.removeOre(ore);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Initialize the game
+function initGame() {
+    console.log("Initializing game...");
+    
+    // Initialize ore manager
+    oreManager = new window.OreManager().init();
+    console.log("Ore manager initialized");
+    
+    // Test creating a single ore directly
+    try {
+        if (window.Ores && window.Ores.Stone) {
+            const testOre = new window.Ores.Stone(myPlayer.x + 100, myPlayer.y + 100);
+            oreManager.ores.push(testOre);
+            console.log("Test ore created successfully at", testOre.x, testOre.y);
+        } else {
+            console.error("window.Ores.Stone is not available for test ore");
+        }
+    } catch (error) {
+        console.error("Error creating test ore:", error);
+    }
+    
+    // Generate initial ores around player
+    console.log(`Generating initial ores around player at (${myPlayer.x}, ${myPlayer.y})`);
+    const initialOres = oreManager.generateOresAroundPosition(myPlayer.x, myPlayer.y, 20, myPlayer.x, myPlayer.y);
+    console.log(`Generated ${initialOres.length} initial ores`);
+    
+    // Make ores accessible to the attack system
+    window.ores = oreManager.getOres();
+    console.log(`Total ores in manager: ${window.ores.length}`);
+    
+    // Initialize equipment manager
+    equipmentManager = new window.Equipment.EquipmentManager(myPlayer);
+    window.equipmentManager = equipmentManager;
+    
+    // Create player inventory
+    const playerInventory = new window.Equipment.Inventory(24);
+    window.playerInventory = playerInventory;
+    
+    // Create inventory UI
+    const playerInventoryUI = new window.Equipment.InventoryUI(playerInventory);
+    window.playerInventoryUI = playerInventoryUI;
+    
+    // Connect inventory to equipment manager
+    equipmentManager.setInventory(playerInventory);
+    
+    // Add some example items to inventory
+    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenPickaxe);
+    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe);
+    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.ironPickaxe);
+    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe);
+    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.smallBag);
+    
+    // Initialize attacks
+    availableAttacks = {
+        pickaxe: new window.Attacks.PickaxeAttack(myPlayer, ctx),
+        axe: new window.Attacks.AxeAttack(myPlayer, ctx)
+    };
+    currentAttack = availableAttacks.pickaxe; // Default attack
+    
+    // Start the game loop
+    lastUpdateTime = performance.now();
+    startGameLoop();
+    
+    // Add welcome message to chat
+    addChatMessage({
+        type: 'system',
+        message: `Welcome to the game, ${username}! Use WASD to move and SPACE to attack.`
+    });
+} 
