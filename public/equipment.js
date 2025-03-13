@@ -15,18 +15,18 @@ const EQUIPMENT_SLOTS = {
     BACKPACK: 'backpack'
 };
 
-// Quick slot system for toolbar (1-0 keys)
+// Update the QUICK_SLOTS constant to include all 10 number keys
 const QUICK_SLOTS = {
-    '1': 'quickSlot1',
-    '2': 'quickSlot2',
-    '3': 'quickSlot3',
-    '4': 'quickSlot4',
-    '5': 'quickSlot5',
-    '6': 'quickSlot6',
-    '7': 'quickSlot7',
-    '8': 'quickSlot8',
-    '9': 'quickSlot9',
-    '0': 'quickSlot0'
+    SLOT_1: 'quickSlot1',
+    SLOT_2: 'quickSlot2',
+    SLOT_3: 'quickSlot3',
+    SLOT_4: 'quickSlot4',
+    SLOT_5: 'quickSlot5',
+    SLOT_6: 'quickSlot6',
+    SLOT_7: 'quickSlot7',
+    SLOT_8: 'quickSlot8',
+    SLOT_9: 'quickSlot9',
+    SLOT_0: 'quickSlot0'  // 0 is the last slot
 };
 
 // Add these variables at the top of the file (outside any class)
@@ -692,33 +692,62 @@ class EquipmentUI {
     }
     
     createQuickbar() {
-        // Create quick slot bar (at bottom of screen)
-        this.quickbarPanel = document.createElement('div');
-        this.quickbarPanel.id = 'quickbarPanel';
-        this.quickbarPanel.className = 'game-panel';
-        this.quickbarPanel.style.position = 'fixed'; // Use fixed positioning
-        this.quickbarPanel.style.left = '50%'; // Center horizontally
-        this.quickbarPanel.style.transform = 'translateX(-50%)'; // Center properly
-        this.quickbarPanel.style.bottom = '10px'; // Position at bottom
-        this.quickbarPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        this.quickbarPanel.style.border = '2px solid #444';
-        this.quickbarPanel.style.borderRadius = '5px';
-        this.quickbarPanel.style.padding = '5px';
-        this.quickbarPanel.style.display = 'flex';
-        this.quickbarPanel.style.flexDirection = 'row'; // Horizontal layout
-        this.quickbarPanel.style.gap = '5px';
-        this.quickbarPanel.style.zIndex = '100';
+        console.log('Creating quickslots panel');
         
-        // Create each quick slot
-        for (const key in QUICK_SLOTS) {
-            const slotName = QUICK_SLOTS[key];
+        // Create the quickslots container
+        this.quickSlotsPanel = document.createElement('div');
+        this.quickSlotsPanel.className = 'quickslots-panel';
+        this.quickSlotsPanel.style.position = 'absolute';
+        this.quickSlotsPanel.style.bottom = '20px';
+        this.quickSlotsPanel.style.left = '50%';
+        this.quickSlotsPanel.style.transform = 'translateX(-50%)';
+        this.quickSlotsPanel.style.display = 'flex';
+        this.quickSlotsPanel.style.gap = '8px'; // Slightly smaller gap to fit all slots
+        this.quickSlotsPanel.style.padding = '10px';
+        this.quickSlotsPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        this.quickSlotsPanel.style.border = '2px solid #555';
+        this.quickSlotsPanel.style.borderRadius = '5px';
+        this.quickSlotsPanel.style.zIndex = '100';
+        
+        // Create quickslots
+        this.quickSlotElements = {};
+        
+        // Add slots 1-9
+        for (let i = 1; i <= 9; i++) {
+            const slotName = `quickSlot${i}`;
+            const key = i;
+            
             const slotElement = this.createQuickSlotElement(slotName, key);
-            this.quickbarPanel.appendChild(slotElement);
+            this.quickSlotsPanel.appendChild(slotElement);
             this.quickSlotElements[slotName] = slotElement;
         }
         
-        // Add to document
-        document.body.appendChild(this.quickbarPanel);
+        // Add slot 0 (last)
+        const slot0Element = this.createQuickSlotElement('quickSlot0', 0);
+        this.quickSlotsPanel.appendChild(slot0Element);
+        this.quickSlotElements['quickSlot0'] = slot0Element;
+        
+        // Add the quickslots panel to the document
+        document.body.appendChild(this.quickSlotsPanel);
+        
+        console.log('Quickslots panel created with elements:', this.quickSlotElements);
+        
+        // Add keyboard shortcuts for quickslots
+        document.addEventListener('keydown', (e) => {
+            // Number keys 1-9
+            if (e.key >= '1' && e.key <= '9') {
+                const slotIndex = parseInt(e.key);
+                const slotName = `quickSlot${slotIndex}`;
+                
+                // Set this quickslot as active
+                this.equipmentManager.setActiveQuickSlot(slotName);
+            }
+            // Number key 0 (last slot)
+            else if (e.key === '0') {
+                // Set slot 0 as active
+                this.equipmentManager.setActiveQuickSlot('quickSlot0');
+            }
+        });
     }
     
     createSlotElement(slotName, isQuickSlot) {
@@ -806,54 +835,33 @@ class EquipmentUI {
     }
     
     createQuickSlotElement(slotName, key) {
-        // Get the quick slot number
-        const slotNumber = key;
-        
-        // Create slot container
         const slotElement = document.createElement('div');
-        slotElement.className = `quick-slot ${slotName}`;
-        slotElement.dataset.slot = slotName;
-        slotElement.dataset.key = key;
-        slotElement.style.width = '50px';
+        slotElement.className = 'quickslot';
+        slotElement.dataset.slotName = slotName;
+        
+        // Set slot styles
+        slotElement.style.width = '50px'; // Slightly smaller to fit all 10
         slotElement.style.height = '50px';
         slotElement.style.backgroundColor = 'rgba(40, 40, 40, 0.8)';
         slotElement.style.border = '1px solid #555';
-        slotElement.style.borderRadius = '3px';
-        slotElement.style.cursor = 'pointer';
-        slotElement.style.position = 'relative';
+        slotElement.style.borderRadius = '5px';
         slotElement.style.display = 'flex';
         slotElement.style.justifyContent = 'center';
         slotElement.style.alignItems = 'center';
-        
-        // Create number label
-        const numberLabel = document.createElement('div');
-        numberLabel.className = 'slot-number';
-        numberLabel.textContent = slotNumber;
-        numberLabel.style.position = 'absolute';
-        numberLabel.style.top = '2px';
-        numberLabel.style.left = '2px';
-        numberLabel.style.fontSize = '10px';
-        numberLabel.style.color = '#999';
-        slotElement.appendChild(numberLabel);
-        
-        // Create empty icon placeholder
-        const iconPlaceholder = document.createElement('div');
-        iconPlaceholder.className = 'slot-icon-placeholder';
-        iconPlaceholder.textContent = ''; // Empty by default
-        iconPlaceholder.style.fontSize = '24px';
-        iconPlaceholder.style.color = '#666';
-        slotElement.appendChild(iconPlaceholder);
+        slotElement.style.position = 'relative';
+        slotElement.style.cursor = 'pointer';
+        slotElement.style.boxShadow = '0 0 5px rgba(0, 0, 0, 0.3)';
         
         // Add click handler
         slotElement.addEventListener('click', () => {
-            this.handleSlotClick(slotName, true);
+            this.handleSlotClick(slotName);
         });
         
         // Add right-click handler
         slotElement.addEventListener('contextmenu', (e) => {
             e.preventDefault(); // Prevent default context menu
             
-            const item = this.equipmentManager.quickSlots[slotName];
+            const item = this.equipmentManager.getEquippedItem(slotName);
             if (item && item instanceof BagItem) {
                 // Open the bag window
                 item.open(e.clientX, e.clientY);
@@ -877,96 +885,36 @@ class EquipmentUI {
             slotElement.classList.remove('drag-over');
             
             // Handle the drop
-            if (draggedItem) {
-                console.log(`Dropping ${draggedItem.name} into quickslot ${slotName}`);
+            if (window.draggedWorldItem) {
+                const item = window.draggedWorldItem.item;
                 
-                // If the item is from a bag
-                if (draggedItemSource === 'bag' && draggedItemSlot !== null) {
-                    // Get the bag
-                    const bag = this.equipmentManager.getEquippedItem(EQUIPMENT_SLOTS.BACKPACK);
-                    if (bag && bag instanceof BagItem) {
-                        // Remove the item from the bag
-                        const item = bag.removeItem(draggedItemSlot);
-                        if (item) {
-                            // Equip the item to the quickslot
-                            this.equipmentManager.equipItem(item, slotName);
-                            
-                            // Update the bag slot
-                            if (bag.windowUI) {
-                                bag.windowUI.updateSlot(draggedItemSlot);
-                            }
-                            
-                            // Update the quickslot
-                            this.updateQuickSlot(slotName);
-                        }
-                    }
-                }
-                // If the item is from another quickslot
-                else if (draggedItemSource === 'quickslot' && draggedItemSlot) {
-                    // Move the item between quickslots
-                    const item = this.equipmentManager.getEquippedItem(draggedItemSlot);
-                    if (item) {
-                        // Unequip from the original slot
-                        this.equipmentManager.unequipItem(draggedItemSlot);
-                        
-                        // Equip to the new slot
-                        this.equipmentManager.equipItem(item, slotName);
-                        
-                        // Update both slots
-                        this.updateQuickSlot(draggedItemSlot);
-                        this.updateQuickSlot(slotName);
-                    }
+                // Try to equip the item
+                const success = this.equipmentManager.equipItem(item, slotName);
+                
+                if (success) {
+                    console.log(`Equipped ${item.name} to ${slotName}`);
+                    
+                    // Update the UI
+                    this.updateQuickSlot(slotName);
+                    
+                    // Remove the dragged item
+                    window.draggedWorldItem = null;
                 }
             }
         });
         
-        // Make quickslots draggable too
-        slotElement.setAttribute('draggable', 'true');
-        
-        slotElement.addEventListener('dragstart', (e) => {
-            const item = this.equipmentManager.getEquippedItem(slotName);
-            if (item) {
-                // Set the drag data
-                draggedItem = item;
-                draggedItemSource = 'quickslot';
-                draggedItemSlot = slotName;
-                draggedItemElement = e.target;
-                
-                // Create a drag image
-                const dragImage = document.createElement('div');
-                dragImage.style.width = '40px';
-                dragImage.style.height = '40px';
-                dragImage.style.backgroundColor = item.color;
-                dragImage.style.border = `2px solid ${item.getRarityColor()}`;
-                dragImage.style.position = 'absolute';
-                dragImage.style.top = '-1000px';
-                document.body.appendChild(dragImage);
-                
-                e.dataTransfer.setDragImage(dragImage, 20, 20);
-                e.dataTransfer.effectAllowed = 'move';
-                
-                // Add a class to show it's being dragged
-                slotElement.classList.add('dragging');
-                
-                // Remove the drag image after a short delay
-                setTimeout(() => {
-                    document.body.removeChild(dragImage);
-                }, 100);
-            } else {
-                // Prevent dragging empty slots
-                e.preventDefault();
-            }
-        });
-        
-        slotElement.addEventListener('dragend', () => {
-            slotElement.classList.remove('dragging');
-            
-            // Reset drag state
-            draggedItem = null;
-            draggedItemSource = null;
-            draggedItemSlot = null;
-            draggedItemElement = null;
-        });
+        // Add key binding text
+        const keyText = document.createElement('div');
+        keyText.textContent = key === 0 ? '0' : key.toString();
+        keyText.style.position = 'absolute';
+        keyText.style.bottom = '2px';
+        keyText.style.right = '2px';
+        keyText.style.fontSize = '10px';
+        keyText.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        keyText.style.color = 'white';
+        keyText.style.padding = '1px 3px';
+        keyText.style.borderRadius = '2px';
+        slotElement.appendChild(keyText);
         
         return slotElement;
     }

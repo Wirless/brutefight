@@ -581,27 +581,50 @@ socket.on('loginSuccess', (data) => {
     };
     currentAttack = availableAttacks.pickaxe; // Default attack
     
-    // Initialize equipment manager
-    equipmentManager = new window.Equipment.EquipmentManager(myPlayer);
+    // Initialize equipment system
+    console.log('Initializing equipment system...');
     
-    // Equip the small bag in the backpack slot
-    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.smallBag, window.Equipment.EQUIPMENT_SLOTS.BACKPACK);
-    
-    // Add some example items to the bag
-    const bag = equipmentManager.slots[window.Equipment.EQUIPMENT_SLOTS.BACKPACK];
-    if (bag && bag instanceof window.Equipment.BagItem) {
-        // Add a stone pickaxe to the first slot of the bag
-        bag.addItem(window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe, 0);
+    try {
+        // Create equipment manager and UI
+        window.equipmentManager = new window.Equipment.EquipmentManager();
+        window.equipmentUI = new window.Equipment.EquipmentUI(window.equipmentManager);
         
-        // Add a wooden axe to the second slot of the bag
-        bag.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe, 1);
+        // Wait for UI to be fully created before equipping items
+        setTimeout(() => {
+            try {
+                console.log('Equipping starting items...');
+                
+                // Get example items
+                const pickaxe = window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe;
+                const axe = window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe;
+                const bag = window.Equipment.EQUIPMENT_EXAMPLES.smallBag;
+                
+                if (pickaxe && axe && bag) {
+                    // Equip axe to left hand and first quickslot
+                    window.equipmentManager.equipItem(axe, window.Equipment.EQUIPMENT_SLOTS.LEFT_HAND);
+                    window.equipmentManager.equipItem(axe, window.Equipment.QUICK_SLOTS.SLOT_1);
+                    
+                    // Equip pickaxe to right hand and second quickslot
+                    window.equipmentManager.equipItem(pickaxe, window.Equipment.EQUIPMENT_SLOTS.RIGHT_HAND);
+                    window.equipmentManager.equipItem(pickaxe, window.Equipment.QUICK_SLOTS.SLOT_2);
+                    
+                    // Equip bag to backpack
+                    window.equipmentManager.equipItem(bag, window.Equipment.EQUIPMENT_SLOTS.BACKPACK);
+                    
+                    // Set the first quickslot as active
+                    window.equipmentManager.setActiveQuickSlot(window.Equipment.QUICK_SLOTS.SLOT_1);
+                    
+                    console.log('Equipment initialized successfully');
+                } else {
+                    console.error('Failed to create example equipment items');
+                }
+            } catch (error) {
+                console.error('Error equipping items:', error);
+            }
+        }, 200); // Longer delay to ensure UI is ready
+    } catch (error) {
+        console.error('Error initializing equipment:', error);
     }
-    
-    // Set the active quick slot to 1 (pickaxe)
-    equipmentManager.setActiveQuickSlot('1');
-    
-    // Set the selected tool
-    window.selectedTool = equipmentManager.getActiveQuickSlotItem();
 });
 
 socket.on('playerList', (playersData) => {
