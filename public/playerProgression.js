@@ -30,6 +30,14 @@ class PlayerProgression {
         
         // Create UI elements
         this.createUI();
+        
+        // Synchronize resources from inventory after a short delay to ensure inventory is loaded
+        setTimeout(() => {
+            this.syncResourcesFromInventory();
+            
+            // Calculate total weight including bags
+            this.calculateTotalWeight();
+        }, 500);
     }
     
     // Calculate max experience needed for level
@@ -40,6 +48,87 @@ class PlayerProgression {
     // Calculate capacity based on level
     calculateCapacity(level) {
         return 100 + (level - 1) * 10;
+    }
+    
+    // Calculate total weight of all items in inventory and bags
+    calculateTotalWeight() {
+        let totalWeight = 0;
+        
+        // Count resources
+        if (this.player.resources) {
+            // Each rock weighs 1
+            if (this.player.resources.rocks) {
+                totalWeight += this.player.resources.rocks;
+            }
+            
+            // Add other resource weights here in the future
+        }
+        
+        // Count items in inventory
+        if (window.playerInventory) {
+            for (let i = 0; i < window.playerInventory.size; i++) {
+                const item = window.playerInventory.getItem(i);
+                if (item) {
+                    // Add weight based on item type
+                    if (item.type === 'resource') {
+                        // Resources in inventory are already counted in resources
+                        // No need to count them again
+                    } else if (item.weight) {
+                        // If item has a defined weight, use it
+                        totalWeight += item.weight;
+                    } else {
+                        // Default weights by type
+                        if (item.type === 'tool' || item.type === 'weapon') {
+                            totalWeight += 5;
+                        } else if (item.type === 'armor') {
+                            totalWeight += 10;
+                        } else {
+                            totalWeight += 1; // Default weight for other items
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Count items in equipped bags
+        if (window.equipmentManager && window.equipmentManager.slots) {
+            const backpackSlot = window.equipmentManager.slots[EQUIPMENT_SLOTS.BACKPACK];
+            if (backpackSlot && backpackSlot.type === 'bag') {
+                // Add weight of the bag itself
+                totalWeight += backpackSlot.weight || 2;
+                
+                // Add weight of items in the bag
+                if (backpackSlot.contents) {
+                    for (let i = 0; i < backpackSlot.contents.length; i++) {
+                        const item = backpackSlot.contents[i];
+                        if (item) {
+                            // Add weight based on item type
+                            if (item.type === 'resource' && item.count) {
+                                totalWeight += item.count;
+                            } else if (item.weight) {
+                                totalWeight += item.weight;
+                            } else {
+                                // Default weights by type
+                                if (item.type === 'tool' || item.type === 'weapon') {
+                                    totalWeight += 5;
+                                } else if (item.type === 'armor') {
+                                    totalWeight += 10;
+                                } else {
+                                    totalWeight += 1; // Default weight for other items
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log(`Total weight calculated: ${totalWeight}/${this.player.capacity}`);
+        
+        // Update UI
+        this.updateUI();
+        
+        return totalWeight;
     }
     
     // Add experience to player
@@ -88,13 +177,30 @@ class PlayerProgression {
     // Send player progression data to server
     sendUpdateToServer() {
         if (window.socket) {
-            window.socket.emit('updatePlayerData', {
+            // Prepare data to send
+            const updateData = {
                 experience: this.player.experience,
                 level: this.player.level,
                 maxExperience: this.player.maxExperience,
                 capacity: this.player.capacity,
-                resources: this.player.resources
-            });
+                resources: this.player.resources,
+                // Include inventory and equipped items if they exist
+                inventory: window.playerInventory ? window.playerInventory.items : undefined,
+                equipped: window.equipmentManager ? window.equipmentManager.equipped : undefined
+            };
+            
+            // Add bag contents if a bag is equipped
+            if (window.equipmentManager && window.equipmentManager.slots) {
+                const backpackSlot = window.equipmentManager.slots[EQUIPMENT_SLOTS.BACKPACK];
+                if (backpackSlot && backpackSlot.type === 'bag') {
+                    updateData.bagContents = backpackSlot.contents;
+                    updateData.bagId = backpackSlot.id;
+                    updateData.bagSlots = backpackSlot.slots;
+                }
+            }
+            
+            // Send update to server
+            window.socket.emit('updatePlayerData', updateData);
             
             // Also save locally
             if (window.savePlayerDataLocally) {
@@ -118,6 +224,9 @@ class PlayerProgression {
                 
                 // Try to add to inventory if it exists
                 this.addResourceToInventory(type, canAdd);
+                
+                // Send update to server immediately
+                this.sendUpdateToServer();
             }
             
             return {
@@ -137,6 +246,9 @@ class PlayerProgression {
         
         // Try to add to inventory if it exists
         this.addResourceToInventory(type, amount);
+        
+        // Send update to server immediately
+        this.sendUpdateToServer();
         
         return {
             added: amount,
@@ -158,10 +270,52 @@ class PlayerProgression {
         this.player.resources[type] -= actualAmount;
         this.updateUI();
         
+        // Send update to server immediately
+        this.sendUpdateToServer();
+        
         return {
             removed: actualAmount,
             notEnough: actualAmount < amount
         };
+    }
+    
+    // Synchronize resources count from inventory
+    syncResourcesFromInventory() {
+        // Check if inventory exists
+        if (!window.playerInventory) return;
+        
+        console.log('Synchronizing resources from inventory...');
+        
+        // Reset resource counts
+        this.player.resources = {
+            rocks: 0
+        };
+        
+        // Count resources in inventory
+        for (let i = 0; i < window.playerInventory.size; i++) {
+            const item = window.playerInventory.getItem(i);
+            if (item && item.type === 'resource') {
+                const resourceType = item.name.toLowerCase();
+                
+                // Initialize resource type if it doesn't exist
+                if (!this.player.resources[resourceType]) {
+                    this.player.resources[resourceType] = 0;
+                }
+                
+                // Add item count to resource count
+                this.player.resources[resourceType] += item.count || 1;
+                
+                console.log(`Found ${item.count || 1} ${resourceType} in inventory slot ${i}`);
+            }
+        }
+        
+        console.log('Resources after sync:', this.player.resources);
+        
+        // Update UI
+        this.updateUI();
+        
+        // Send update to server
+        this.sendUpdateToServer();
     }
     
     // Get current capacity usage
@@ -351,6 +505,8 @@ class PlayerProgression {
         // Check if inventory exists
         if (!window.playerInventory) return;
         
+        console.log(`Adding ${amount} ${type} to inventory`);
+        
         // Find resource definition
         let resourceItem = null;
         
@@ -366,7 +522,15 @@ class PlayerProgression {
                     window.playerInventory.setItem(i, item);
                     amount -= addAmount;
                     
-                    if (amount <= 0) return; // All added
+                    console.log(`Added ${addAmount} ${type} to existing stack, ${amount} remaining`);
+                    
+                    if (amount <= 0) {
+                        // Save inventory state after modification
+                        if (window.myPlayer && window.playerInventory) {
+                            window.myPlayer.inventory = window.playerInventory.items;
+                        }
+                        return; // All added
+                    }
                 }
             }
         }
@@ -406,10 +570,17 @@ class PlayerProgression {
             const slotIndex = window.playerInventory.addItem(newStack);
             if (slotIndex === -1) {
                 // Inventory is full
+                console.log(`Inventory full, couldn't add ${amount} remaining ${type}`);
                 break;
             }
             
+            console.log(`Created new stack of ${newStack.count} ${type} in slot ${slotIndex}`);
             amount -= newStack.count;
+        }
+        
+        // Save inventory state after modification
+        if (window.myPlayer && window.playerInventory) {
+            window.myPlayer.inventory = window.playerInventory.items;
         }
     }
 }

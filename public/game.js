@@ -483,16 +483,94 @@ function login() {
 // Save player data locally
 function savePlayerDataLocally() {
     if (myPlayer) {
+        // Make sure inventory and equipment data is saved
+        if (window.playerInventory) {
+            myPlayer.inventory = window.playerInventory.items;
+        }
+        
+        if (window.equipmentManager) {
+            myPlayer.equipped = window.equipmentManager.equipped;
+        }
+        
         const saveData = {
             username,
             playerData: myPlayer
         };
         localStorage.setItem('playerSave', JSON.stringify(saveData));
+        
+        // Show save indicator
+        showSaveIndicator();
     }
+}
+
+// Show a visual indicator that the game is saving
+function showSaveIndicator() {
+    // Create or get the save indicator
+    let saveIndicator = document.getElementById('saveIndicator');
+    
+    if (!saveIndicator) {
+        saveIndicator = document.createElement('div');
+        saveIndicator.id = 'saveIndicator';
+        saveIndicator.style.position = 'fixed';
+        saveIndicator.style.bottom = '10px';
+        saveIndicator.style.right = '10px';
+        saveIndicator.style.backgroundColor = 'rgba(0, 233, 150, 0.8)';
+        saveIndicator.style.color = 'white';
+        saveIndicator.style.padding = '5px 10px';
+        saveIndicator.style.borderRadius = '5px';
+        saveIndicator.style.fontSize = '12px';
+        saveIndicator.style.fontWeight = 'bold';
+        saveIndicator.style.zIndex = '9999';
+        saveIndicator.style.opacity = '0';
+        saveIndicator.style.transition = 'opacity 0.3s ease';
+        document.body.appendChild(saveIndicator);
+    }
+    
+    // Update text and show
+    saveIndicator.textContent = 'Game Saved!';
+    saveIndicator.style.opacity = '1';
+    
+    // Hide after 2 seconds
+    setTimeout(() => {
+        saveIndicator.style.opacity = '0';
+    }, 2000);
 }
 
 // Make savePlayerDataLocally globally available
 window.savePlayerDataLocally = savePlayerDataLocally;
+
+// Add event listener to save data before page unload
+window.addEventListener('beforeunload', function() {
+    console.log('Page is being unloaded, saving player data...');
+    
+    // Save player data locally
+    if (myPlayer) {
+        // Make sure inventory and equipment data is saved
+        if (window.playerInventory) {
+            myPlayer.inventory = window.playerInventory.items;
+        }
+        
+        if (window.equipmentManager) {
+            myPlayer.equipped = window.equipmentManager.equipped;
+        }
+        
+        savePlayerDataLocally();
+        
+        // Send final update to server if connected
+        if (socket && socket.connected) {
+            console.log('Sending final update to server...');
+            
+            // Use a synchronous approach for the final save
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/save-player-data', false); // false makes it synchronous
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(JSON.stringify({
+                username: username,
+                playerData: myPlayer
+            }));
+        }
+    }
+});
 
 // Socket event handlers
 socket.on('loginSuccess', (data) => {
@@ -1224,6 +1302,39 @@ function initGame() {
     window.expOrbManager = expOrbManager;
     console.log("Experience orb manager initialized");
     
+    // Set up auto-save interval (every 60 seconds)
+    setInterval(() => {
+        if (myPlayer) {
+            console.log("Auto-saving player data...");
+            
+            // Save inventory and equipment data to myPlayer object
+            if (window.playerInventory) {
+                myPlayer.inventory = window.playerInventory.items;
+            }
+            
+            if (window.equipmentManager) {
+                myPlayer.equipped = window.equipmentManager.equipped;
+            }
+            
+            // Save locally
+            savePlayerDataLocally();
+            
+            // Send update to server
+            if (socket && socket.connected) {
+                socket.emit('updatePlayerData', {
+                    experience: myPlayer.experience,
+                    level: myPlayer.level,
+                    maxExperience: myPlayer.maxExperience,
+                    capacity: myPlayer.capacity,
+                    resources: myPlayer.resources,
+                    skills: myPlayer.skills,
+                    inventory: myPlayer.inventory,
+                    equipped: myPlayer.equipped
+                });
+            }
+        }
+    }, 60000); // 60 seconds
+    
     // Test creating a single ore directly
     try {
         if (window.Ores && window.Ores.Stone) {
@@ -1250,8 +1361,8 @@ function initGame() {
     equipmentManager = new window.Equipment.EquipmentManager(myPlayer);
     window.equipmentManager = equipmentManager;
     
-    // Create player inventory
-    const playerInventory = new window.Equipment.Inventory(24);
+    // Create player inventory with 16 slots instead of 24
+    const playerInventory = new window.Equipment.Inventory(16);
     window.playerInventory = playerInventory;
     
     // Create inventory UI
@@ -1269,12 +1380,38 @@ function initGame() {
     skillsManager = new window.SkillsManager(myPlayer);
     window.skillsManager = skillsManager;
     
-    // Add some example items to inventory
-    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenPickaxe);
-    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe);
-    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.ironPickaxe);
-    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe);
-    playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.smallBag);
+    // Load saved inventory if it exists, otherwise add example items
+    if (myPlayer.inventory && myPlayer.inventory.length > 0) {
+        console.log("Loading saved inventory with", myPlayer.inventory.length, "items");
+        // Load saved inventory items
+        myPlayer.inventory.forEach((item, index) => {
+            if (item) {
+                playerInventory.setItem(index, item);
+            }
+        });
+        
+        // Load equipped items if they exist
+        if (myPlayer.equipped) {
+            equipmentManager.equipped = myPlayer.equipped;
+            equipmentManager.updateEquipmentDisplay();
+        }
+        
+        // Synchronize resources with inventory after loading
+        setTimeout(() => {
+            if (window.playerProgression) {
+                console.log("Synchronizing resources with inventory after loading...");
+                window.playerProgression.syncResourcesFromInventory();
+            }
+        }, 1000); // Delay to ensure everything is loaded
+    } else {
+        console.log("No saved inventory found, adding example items");
+        // Add some example items to inventory for new players
+        playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenPickaxe);
+        playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe);
+        playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.ironPickaxe);
+        playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe);
+        playerInventory.addItem(window.Equipment.EQUIPMENT_EXAMPLES.smallBag);
+    }
     
     // Initialize attacks
     availableAttacks = {

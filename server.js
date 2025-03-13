@@ -4,6 +4,11 @@ const socketIO = require('socket.io');
 const fs = require('fs');
 const path = require('path');
 
+// Rate limiting for player updates
+const playerUpdateRateLimits = new Map();
+const RATE_LIMIT_WINDOW = 1000; // 1 second window
+const MAX_UPDATES_PER_WINDOW = 5; // Max 5 updates per second
+
 // Load configuration
 let config = {
   features: {
@@ -47,6 +52,66 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   next();
+});
+
+// Add middleware to parse JSON requests
+app.use(express.json());
+
+// Route to handle synchronous player data saves
+app.post('/save-player-data', (req, res) => {
+  const { username, playerData } = req.body;
+  
+  if (!username || !playerData) {
+    return res.status(400).json({ success: false, message: 'Missing username or player data' });
+  }
+  
+  try {
+    // Update player data in memory
+    if (players[username]) {
+      // Validate the data before saving (similar to socket validation)
+      const currentPlayer = players[username];
+      
+      // Validate resources to prevent cheating
+      if (playerData.resources && currentPlayer.resources) {
+        Object.keys(playerData.resources).forEach(resourceType => {
+          const currentAmount = currentPlayer.resources[resourceType] || 0;
+          const newAmount = playerData.resources[resourceType] || 0;
+          
+          // If resources increased by more than 100, it's suspicious
+          if (newAmount > currentAmount + 100) {
+            console.log(`SUSPICIOUS EMERGENCY SAVE: ${username} tried to add ${newAmount - currentAmount} ${resourceType}`);
+            playerData.resources[resourceType] = currentAmount + 100;
+          }
+        });
+      }
+      
+      // Ensure inventory data is preserved
+      if (playerData.inventory) {
+        console.log(`Saving inventory data for ${username} with ${playerData.inventory.filter(i => i !== null).length} items`);
+      }
+      
+      // Update player data with validated values
+      players[username] = {
+        ...currentPlayer,
+        ...playerData,
+        // Preserve important server-side values that shouldn't be overwritten
+        x: playerData.x || currentPlayer.x,
+        y: playerData.y || currentPlayer.y,
+        color: currentPlayer.color
+      };
+      
+      // Save to file
+      savePlayerToAccount(username);
+      
+      console.log(`Emergency save for player ${username} successful`);
+      return res.json({ success: true, message: 'Player data saved successfully' });
+    } else {
+      return res.status(404).json({ success: false, message: 'Player not found' });
+    }
+  } catch (error) {
+    console.error(`Error saving player data for ${username}:`, error);
+    return res.status(500).json({ success: false, message: 'Error saving player data' });
+  }
 });
 
 // Admin API routes
@@ -307,17 +372,104 @@ io.on('connection', (socket) => {
   // Handle player data updates (experience, level, etc.)
   socket.on('updatePlayerData', (data) => {
     if (socket.username && players[socket.username]) {
-      // Update specific fields from the data
-      if (data.experience !== undefined) players[socket.username].experience = data.experience;
-      if (data.level !== undefined) players[socket.username].level = data.level;
-      if (data.maxExperience !== undefined) players[socket.username].maxExperience = data.maxExperience;
-      if (data.capacity !== undefined) players[socket.username].capacity = data.capacity;
-      if (data.resources !== undefined) players[socket.username].resources = data.resources;
-      if (data.skills !== undefined) players[socket.username].skills = data.skills;
+      const currentPlayer = players[socket.username];
+      
+      // Apply rate limiting to prevent spam updates
+      const now = Date.now();
+      if (!playerUpdateRateLimits.has(socket.username)) {
+        playerUpdateRateLimits.set(socket.username, {
+          count: 1,
+          lastReset: now
+        });
+      } else {
+        const rateLimit = playerUpdateRateLimits.get(socket.username);
+        
+        // Reset counter if window has passed
+        if (now - rateLimit.lastReset > RATE_LIMIT_WINDOW) {
+          rateLimit.count = 1;
+          rateLimit.lastReset = now;
+        } else {
+          rateLimit.count++;
+          
+          // If too many updates, ignore this one
+          if (rateLimit.count > MAX_UPDATES_PER_WINDOW) {
+            console.log(`Rate limit exceeded for ${socket.username}: ${rateLimit.count} updates in ${RATE_LIMIT_WINDOW}ms`);
+            return; // Skip this update
+          }
+        }
+      }
+      
+      // Validate resource changes to prevent cheating
+      if (data.resources) {
+        // Check for suspicious resource changes
+        if (currentPlayer.resources) {
+          Object.keys(data.resources).forEach(resourceType => {
+            const currentAmount = currentPlayer.resources[resourceType] || 0;
+            const newAmount = data.resources[resourceType] || 0;
+            
+            // If resources increased by more than 100 in a single update, it's suspicious
+            if (newAmount > currentAmount + 100) {
+              console.log(`SUSPICIOUS: ${socket.username} tried to add ${newAmount - currentAmount} ${resourceType} in one update`);
+              // Cap the increase to a reasonable amount
+              data.resources[resourceType] = currentAmount + 100;
+              // Could also log this for admin review
+            }
+            
+            // If resources decreased by more than 100 in a single update without crafting, it's suspicious
+            if (newAmount < currentAmount - 100 && !data.crafting) {
+              console.log(`SUSPICIOUS: ${socket.username} tried to remove ${currentAmount - newAmount} ${resourceType} in one update`);
+              // Cap the decrease to a reasonable amount
+              data.resources[resourceType] = currentAmount - 100;
+            }
+          });
+        }
+      }
+      
+      // Validate experience changes
+      if (data.experience !== undefined && currentPlayer.experience !== undefined) {
+        const expIncrease = data.experience - currentPlayer.experience;
+        // If experience increased by more than 500 in a single update, it's suspicious
+        if (expIncrease > 500) {
+          console.log(`SUSPICIOUS: ${socket.username} tried to add ${expIncrease} experience in one update`);
+          // Cap the increase to a reasonable amount
+          data.experience = currentPlayer.experience + 500;
+        }
+      }
+      
+      // Validate level changes
+      if (data.level !== undefined && currentPlayer.level !== undefined) {
+        // If level jumped by more than 1, it's suspicious
+        if (data.level > currentPlayer.level + 1) {
+          console.log(`SUSPICIOUS: ${socket.username} tried to jump from level ${currentPlayer.level} to ${data.level}`);
+          // Cap the increase to 1 level
+          data.level = currentPlayer.level + 1;
+        }
+      }
+      
+      // Update specific fields from the data after validation
+      if (data.experience !== undefined) currentPlayer.experience = data.experience;
+      if (data.level !== undefined) currentPlayer.level = data.level;
+      if (data.maxExperience !== undefined) currentPlayer.maxExperience = data.maxExperience;
+      if (data.capacity !== undefined) currentPlayer.capacity = data.capacity;
+      if (data.resources !== undefined) currentPlayer.resources = data.resources;
+      if (data.skills !== undefined) currentPlayer.skills = data.skills;
+      
+      // IMPORTANT: Save inventory if it exists
+      if (data.inventory) {
+        currentPlayer.inventory = data.inventory;
+        const itemCount = data.inventory.filter(i => i !== null).length;
+        console.log(`Updated inventory for ${socket.username} with ${itemCount} items`);
+      }
+      
+      // IMPORTANT: Save equipped items if they exist
+      if (data.equipped) {
+        currentPlayer.equipped = data.equipped;
+        console.log(`Updated equipped items for ${socket.username}`);
+      }
       
       // Save the updated player data
       savePlayerToAccount(socket.username);
-      console.log(`Updated player data for ${socket.username} (Level: ${players[socket.username].level}, XP: ${players[socket.username].experience})`);
+      console.log(`Updated player data for ${socket.username} (Level: ${currentPlayer.level}, XP: ${currentPlayer.experience})`);
       
       // Log skills data if available
       if (data.skills && data.skills.mining) {
