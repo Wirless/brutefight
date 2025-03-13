@@ -54,6 +54,9 @@ class PlayerProgression {
         // Update UI
         this.updateUI();
         
+        // Send update to server
+        this.sendUpdateToServer();
+        
         return {
             currentExp: this.player.experience,
             maxExp: this.player.maxExperience,
@@ -77,6 +80,27 @@ class PlayerProgression {
         
         // Show level up message
         this.showLevelUpMessage();
+        
+        // Send update to server
+        this.sendUpdateToServer();
+    }
+    
+    // Send player progression data to server
+    sendUpdateToServer() {
+        if (window.socket) {
+            window.socket.emit('updatePlayerData', {
+                experience: this.player.experience,
+                level: this.player.level,
+                maxExperience: this.player.maxExperience,
+                capacity: this.player.capacity,
+                resources: this.player.resources
+            });
+            
+            // Also save locally
+            if (window.savePlayerDataLocally) {
+                window.savePlayerDataLocally();
+            }
+        }
     }
     
     // Add resource to player

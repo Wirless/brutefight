@@ -20,7 +20,11 @@ class Ore {
         this.isHit = false;
         this.lastHitTime = 0;
         this.hitDuration = 500; // ms
-        this.experience = options.experience || 5; // Default experience per ore
+        
+        // Calculate experience based on size
+        const sizeMultiplier = (this.width * this.height) / (40 * 60); // Normalized size multiplier
+        this.experience = Math.round(options.experience * sizeMultiplier) || Math.round(5 * sizeMultiplier); // Default experience per ore
+        
         this.generateShape();
     }
     
@@ -189,6 +193,15 @@ class Ore {
         this.isHit = true;
         this.lastHitTime = Date.now();
         
+        // Release a small experience orb when hit (not destroyed)
+        if (window.expOrbManager && this.health > 0) {
+            // Calculate small experience amount based on damage and total experience
+            const hitExpAmount = Math.max(1, Math.floor(damage / this.maxHealth * this.experience * 0.2));
+            
+            // Create a single small experience orb
+            window.expOrbManager.createOrb(this.x, this.y, hitExpAmount);
+        }
+        
         // Check if destroyed
         if (this.health <= 0) {
             this.health = 0;
@@ -243,12 +256,21 @@ class Ore {
 
 class Stone extends Ore {
     constructor(x, y) {
+        // Generate random size for the stone
+        const width = 30 + Math.random() * 50;
+        const height = 30 + Math.random() * 50;
+        
+        // Calculate base experience based on size
+        const sizeMultiplier = (width * height) / (30 * 30); // Normalized size multiplier
+        const baseExperience = 5 + Math.floor(Math.random() * 3); // 5-7 base exp
+        const sizeAdjustedExp = Math.round(baseExperience * sizeMultiplier);
+        
         super(x, y, {
-            width: 30 + Math.random() * 50,
-            height: 30 + Math.random() * 50,
+            width: width,
+            height: height,
             health: 50 + Math.random() * 50,
             color: '#777777',
-            experience: 5 + Math.floor(Math.random() * 3) // 5-7 exp per stone
+            experience: sizeAdjustedExp
         });
         
         // Stone-specific properties

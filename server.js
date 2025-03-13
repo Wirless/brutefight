@@ -188,7 +188,15 @@ io.on('connection', (socket) => {
           dexterity: 1,
           strength: 1,
           luck: 1,
-          speed: config.players?.defaultSpeed || 5
+          speed: config.players?.defaultSpeed || 5,
+          // Add progression fields
+          level: 1,
+          experience: 0,
+          maxExperience: 100, // Level 1 requires 100 XP
+          capacity: 100, // Base capacity
+          resources: {
+            rocks: 0
+          }
         };
         console.log(`Created new player ${username}`);
       }
@@ -285,6 +293,22 @@ io.on('connection', (socket) => {
       io.emit('chatMessage', sanitizedMsg);
       
       console.log(`Chat message from ${socket.username}: ${sanitizedMsg.message}`);
+    }
+  });
+  
+  // Handle player data updates (experience, level, etc.)
+  socket.on('updatePlayerData', (data) => {
+    if (socket.username && players[socket.username]) {
+      // Update specific fields from the data
+      if (data.experience !== undefined) players[socket.username].experience = data.experience;
+      if (data.level !== undefined) players[socket.username].level = data.level;
+      if (data.maxExperience !== undefined) players[socket.username].maxExperience = data.maxExperience;
+      if (data.capacity !== undefined) players[socket.username].capacity = data.capacity;
+      if (data.resources !== undefined) players[socket.username].resources = data.resources;
+      
+      // Save the updated player data
+      savePlayerToAccount(socket.username);
+      console.log(`Updated player data for ${socket.username} (Level: ${players[socket.username].level}, XP: ${players[socket.username].experience})`);
     }
   });
 });

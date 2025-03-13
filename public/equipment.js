@@ -1,6 +1,7 @@
 // Equipment System for the game
 // Contains equipment classes, slot management, and UI
 
+
 // Constants for equipment slots
 const EQUIPMENT_SLOTS = {
     HEAD: 'head',
@@ -185,19 +186,43 @@ class InventoryUI {
                     } else if (draggedItemSource === 'equipment' && window.equipmentManager) {
                         // Move from equipment to inventory
                         const equipSlot = draggedItemSlot;
-                        const equippedItem = window.equipmentManager.unequip(equipSlot);
+                        const equippedItem = window.equipmentManager.unequipItem(equipSlot);
                         
                         if (equippedItem) {
                             if (targetItem) {
                                 // Check if target item can be equipped
                                 if (targetItem.isEquippable && window.equipmentManager.canEquip(targetItem, equipSlot)) {
                                     // Swap with equipped item
-                                    window.equipmentManager.equip(targetItem, equipSlot);
+                                    window.equipmentManager.equipItem(targetItem, equipSlot);
                                     this.inventory.setItem(targetIndex, equippedItem);
                                 }
                             } else {
                                 // Move to empty inventory slot
                                 this.inventory.setItem(targetIndex, equippedItem);
+                            }
+                        }
+                    } else if (draggedItemSource === 'quickslot' && window.equipmentManager) {
+                        // Move from quickslot to inventory
+                        const slotName = QUICK_SLOTS[draggedItemSlot.split(':')[1]];
+                        const equippedItem = window.equipmentManager.quickSlots[slotName];
+                        
+                        if (equippedItem) {
+                            // Remove from quickslot
+                            window.equipmentManager.quickSlots[slotName] = null;
+                            window.equipmentManager.ui.updateSlot(slotName, true);
+                            
+                            // Add to inventory
+                            this.inventory.addItem(equippedItem);
+                            this.updateSlot(targetIndex);
+                        }
+                    } else if (draggedItemSource === 'bag') {
+                        // Get the bag and slot
+                        const [bagId, bagSlot] = draggedItemSlot.split(':');
+                        const bag = window.equipmentManager.getBagById(bagId);
+                        if (bag) {
+                            bag.contents[bagSlot] = currentItem;
+                            if (bag.windowUI) {
+                                bag.windowUI.updateSlot(bagSlot);
                             }
                         }
                     }
@@ -368,10 +393,10 @@ class InventoryUI {
                 
                 const tooltip = document.createElement('div');
                 tooltip.className = 'item-tooltip';
-                tooltip.style.position = 'absolute';
-                tooltip.style.top = '100%';
-                tooltip.style.left = '50%';
-                tooltip.style.transform = 'translateX(-50%)';
+                tooltip.style.position = 'fixed';
+                tooltip.style.top = `${e.clientY + 15}px`;
+                tooltip.style.left = `${e.clientX + 10}px`;
+                tooltip.style.transform = 'none';
                 tooltip.style.backgroundColor = 'rgba(30, 30, 30, 0.95)';
                 tooltip.style.color = 'white';
                 tooltip.style.padding = '10px';
@@ -435,24 +460,38 @@ class InventoryUI {
                 
                 document.body.appendChild(tooltip);
                 
-                // Position the tooltip properly
-                const slotRect = slot.getBoundingClientRect();
-                const tooltipRect = tooltip.getBoundingClientRect();
+                // Update tooltip position on mousemove
+                const moveHandler = (moveEvent) => {
+                    tooltip.style.top = `${moveEvent.clientY + 15}px`;
+                    tooltip.style.left = `${moveEvent.clientX + 10}px`;
+                    
+                    // Ensure tooltip stays within viewport
+                    const tooltipRect = tooltip.getBoundingClientRect();
+                    if (tooltipRect.right > window.innerWidth) {
+                        tooltip.style.left = `${moveEvent.clientX - tooltipRect.width - 10}px`;
+                    }
+                    if (tooltipRect.bottom > window.innerHeight) {
+                        tooltip.style.top = `${moveEvent.clientY - tooltipRect.height - 10}px`;
+                    }
+                };
                 
-                if (slotRect.top + slotRect.height + tooltipRect.height > window.innerHeight) {
-                    // Show tooltip above if no space below
-                    tooltip.style.top = 'auto';
-                    tooltip.style.bottom = '100%';
-                }
+                document.addEventListener('mousemove', moveHandler);
                 
-                // Store the tooltip on the item element
+                // Store the tooltip and move handler on the item element
                 itemElement.tooltip = tooltip;
+                itemElement.tooltipMoveHandler = moveHandler;
             });
             
             itemElement.addEventListener('mouseleave', () => {
                 if (itemElement.tooltip) {
                     itemElement.tooltip.remove();
                     itemElement.tooltip = null;
+                    
+                    // Remove the mousemove event listener
+                    if (itemElement.tooltipMoveHandler) {
+                        document.removeEventListener('mousemove', itemElement.tooltipMoveHandler);
+                        itemElement.tooltipMoveHandler = null;
+                    }
                 }
             });
             
@@ -923,12 +962,92 @@ class BagWindowUI {
             itemVisual.style.border = `2px solid ${item.getRarityColor()}`;
             itemVisual.style.borderRadius = '3px';
             
-            // Add tooltip
-            slot.title = `${item.name}\n${item.description}\nLevel ${item.level} ${item.rarity}`;
+            // Remove native tooltip
+            slot.removeAttribute('title');
+            
+            // Add custom tooltip
+            itemVisual.addEventListener('mouseenter', (e) => {
+                const tooltip = document.createElement('div');
+                tooltip.className = 'item-tooltip';
+                tooltip.style.position = 'fixed';
+                tooltip.style.top = `${e.clientY + 15}px`;
+                tooltip.style.left = `${e.clientX + 10}px`;
+                tooltip.style.transform = 'none';
+                tooltip.style.backgroundColor = 'rgba(30, 30, 30, 0.95)';
+                tooltip.style.color = 'white';
+                tooltip.style.padding = '10px';
+                tooltip.style.borderRadius = '4px';
+                tooltip.style.border = '1px solid rgb(0, 233, 150)';
+                tooltip.style.zIndex = '1001';
+                tooltip.style.minWidth = '150px';
+                tooltip.style.textAlign = 'left';
+                tooltip.style.whiteSpace = 'nowrap';
+                
+                // Item name (with color based on rarity)
+                const nameElem = document.createElement('div');
+                nameElem.textContent = item.name;
+                nameElem.style.fontWeight = 'bold';
+                nameElem.style.marginBottom = '5px';
+                nameElem.style.color = item.getRarityColor();
+                tooltip.appendChild(nameElem);
+                
+                // Item description
+                if (item.description) {
+                    const descElem = document.createElement('div');
+                    descElem.textContent = item.description;
+                    descElem.style.fontSize = '12px';
+                    descElem.style.marginBottom = '5px';
+                    tooltip.appendChild(descElem);
+                }
+                
+                // Item level and rarity
+                const levelElem = document.createElement('div');
+                levelElem.textContent = `Level ${item.level} ${item.rarity}`;
+                levelElem.style.fontSize = '12px';
+                levelElem.style.marginBottom = '5px';
+                tooltip.appendChild(levelElem);
+                
+                document.body.appendChild(tooltip);
+                
+                // Update tooltip position on mousemove
+                const moveHandler = (moveEvent) => {
+                    tooltip.style.top = `${moveEvent.clientY + 15}px`;
+                    tooltip.style.left = `${moveEvent.clientX + 10}px`;
+                    
+                    // Ensure tooltip stays within viewport
+                    const tooltipRect = tooltip.getBoundingClientRect();
+                    if (tooltipRect.right > window.innerWidth) {
+                        tooltip.style.left = `${moveEvent.clientX - tooltipRect.width - 10}px`;
+                    }
+                    if (tooltipRect.bottom > window.innerHeight) {
+                        tooltip.style.top = `${moveEvent.clientY - tooltipRect.height - 10}px`;
+                    }
+                };
+                
+                document.addEventListener('mousemove', moveHandler);
+                
+                // Store the tooltip and move handler on the item element
+                itemVisual.tooltip = tooltip;
+                itemVisual.tooltipMoveHandler = moveHandler;
+            });
+            
+            itemVisual.addEventListener('mouseleave', () => {
+                if (itemVisual.tooltip) {
+                    itemVisual.tooltip.remove();
+                    itemVisual.tooltip = null;
+                    
+                    // Remove the mousemove event listener
+                    if (itemVisual.tooltipMoveHandler) {
+                        document.removeEventListener('mousemove', itemVisual.tooltipMoveHandler);
+                        itemVisual.tooltipMoveHandler = null;
+                    }
+                }
+            });
             
             slot.appendChild(itemVisual);
         } else {
-            slot.title = '';
+            // Empty slot
+            slot.removeAttribute('title');
         }
     }
     
@@ -1025,8 +1144,24 @@ class EquipmentManager {
         
         // For quick slots, we don't need to check item slot compatibility
         if (!isQuickSlot) {
-            // Check if the item can be equipped to this slot
-            if (item.slot !== slotName) {
+            // Special handling for backpack slot
+            if (slotName === EQUIPMENT_SLOTS.BACKPACK) {
+                // Allow any bag type item in the backpack slot
+                if (item.type !== 'bag') {
+                    console.error(`Cannot equip ${item.name} to ${slotName} slot, must be a bag`);
+                    return false;
+                }
+            } 
+            // Special handling for hand slots
+            else if (slotName === EQUIPMENT_SLOTS.LEFT_HAND || slotName === EQUIPMENT_SLOTS.RIGHT_HAND) {
+                // Allow any tool or weapon in hand slots
+                if (item.type !== 'tool' && item.type !== 'weapon') {
+                    console.error(`Cannot equip ${item.name} to ${slotName} slot, must be a tool or weapon`);
+                    return false;
+                }
+            }
+            // Check if the item can be equipped to this slot for other slots
+            else if (item.slot !== slotName) {
                 console.error(`Cannot equip ${item.name} to ${slotName} slot`);
                 return false;
             }
@@ -1132,13 +1267,116 @@ class EquipmentManager {
     toggleEquipmentPanel() {
         this.ui.toggleEquipmentPanel();
     }
+    
+    // Check if an item can be equipped to a specific slot
+    canEquip(item, slotName) {
+        // Check if this is a quick slot
+        const isQuickSlot = Object.values(QUICK_SLOTS).includes(slotName);
+        
+        // For quick slots, we don't need to check item slot compatibility
+        if (!isQuickSlot) {
+            // Special handling for backpack slot
+            if (slotName === EQUIPMENT_SLOTS.BACKPACK) {
+                // Allow any bag type item in the backpack slot
+                if (item.type !== 'bag') {
+                    return false;
+                }
+            } 
+            // Special handling for hand slots
+            else if (slotName === EQUIPMENT_SLOTS.LEFT_HAND || slotName === EQUIPMENT_SLOTS.RIGHT_HAND) {
+                // Allow any tool or weapon in hand slots
+                if (item.type !== 'tool' && item.type !== 'weapon') {
+                    return false;
+                }
+            }
+            // Check if the item can be equipped to this slot for other slots
+            else if (item.slot !== slotName) {
+                return false;
+            }
+            
+            // Check if the player meets requirements
+            if (!item.canBeEquippedBy(this.player)) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    // Equip an item from inventory
+    equipFromInventory(inventorySlotIndex) {
+        if (!this.inventory) {
+            console.error('No inventory reference set');
+            return false;
+        }
+        
+        const item = this.inventory.getItem(inventorySlotIndex);
+        if (!item) {
+            console.error(`No item in inventory slot ${inventorySlotIndex}`);
+            return false;
+        }
+        
+        // Determine the appropriate equipment slot
+        let targetSlot = item.slot;
+        
+        // For tools and weapons, use the appropriate hand slot
+        if (item.type === 'tool' || item.type === 'weapon') {
+            // Try right hand first, then left hand if right is occupied
+            if (!this.slots[EQUIPMENT_SLOTS.RIGHT_HAND]) {
+                targetSlot = EQUIPMENT_SLOTS.RIGHT_HAND;
+            } else if (!this.slots[EQUIPMENT_SLOTS.LEFT_HAND]) {
+                targetSlot = EQUIPMENT_SLOTS.LEFT_HAND;
+            } else {
+                // Both hands occupied, use right hand by default
+                targetSlot = EQUIPMENT_SLOTS.RIGHT_HAND;
+            }
+        }
+        
+        // For bags, use the backpack slot
+        if (item.type === 'bag') {
+            targetSlot = EQUIPMENT_SLOTS.BACKPACK;
+        }
+        
+        if (!targetSlot) {
+            console.error(`Cannot determine equipment slot for ${item.name}`);
+            return false;
+        }
+        
+        // Check if we can equip to this slot
+        if (!this.canEquip(item, targetSlot)) {
+            console.error(`Cannot equip ${item.name} to ${targetSlot} slot`);
+            return false;
+        }
+        
+        // Get current item in the target slot (if any)
+        const currentItem = this.slots[targetSlot];
+        
+        // Equip the new item
+        if (this.equipItem(item, targetSlot)) {
+            // Remove from inventory
+            this.inventory.removeItem(inventorySlotIndex);
+            
+            // If there was an item in the slot, add it to inventory
+            if (currentItem) {
+                const addedSlot = this.inventory.addItem(currentItem);
+                if (addedSlot < 0) {
+                    console.warn('Inventory full, item dropped');
+                    // In a real game, you might want to drop the item on the ground
+                }
+            }
+            
+            return true;
+        }
+        
+        return false;
+    }
 }
 
 // Equipment UI class
 class EquipmentUI {
     constructor(equipmentManager, options = {}) {
         this.equipmentManager = equipmentManager;
-        this.isPanelVisible = false;
+        this.isPanelVisible = true; // Changed to true by default
         this.equipmentPanel = null;
         this.quickbarPanel = null;
         this.slotElements = {};
@@ -1154,8 +1392,11 @@ class EquipmentUI {
             // Show quickbar immediately - it should always be visible
             this.showQuickbar();
             
-            // Show compact equipment display - always visible
-            this.createCompactEquipmentDisplay();
+            // Show equipment panel immediately - always visible now
+            this.showEquipmentPanel();
+            
+            // Remove compact equipment display - we're using the main panel instead
+            // this.createCompactEquipmentDisplay();
         } catch (err) {
             console.error('Error creating equipment UI:', err);
         }
@@ -1405,9 +1646,8 @@ class EquipmentUI {
     }
     
     createSlotElement(slotName, isQuickSlot) {
-        // Create slot container
         const slotElement = document.createElement('div');
-        slotElement.className = `equipment-slot ${slotName}`;
+        slotElement.className = isQuickSlot ? 'quick-slot' : 'equipment-slot';
         slotElement.dataset.slot = slotName;
         
         // Style the slot
@@ -1417,12 +1657,25 @@ class EquipmentUI {
         slotElement.style.border = '2px solid rgb(0, 233, 150)';
         slotElement.style.borderRadius = '5px';
         slotElement.style.display = 'flex';
-        slotElement.style.flexDirection = 'column';
         slotElement.style.alignItems = 'center';
         slotElement.style.justifyContent = 'center';
         slotElement.style.position = 'relative';
         slotElement.style.cursor = 'pointer';
         slotElement.style.transition = 'all 0.2s ease';
+        
+        // Add label for equipment slots
+        if (!isQuickSlot) {
+            const label = document.createElement('div');
+            label.style.position = 'absolute';
+            label.style.bottom = '-20px';
+            label.style.left = '0';
+            label.style.right = '0';
+            label.style.textAlign = 'center';
+            label.style.color = 'rgb(0, 233, 150)';
+            label.style.fontSize = '12px';
+            label.textContent = this.formatSlotName(slotName);
+            slotElement.appendChild(label);
+        }
         
         // Hover effect
         slotElement.addEventListener('mouseover', () => {
@@ -1435,67 +1688,125 @@ class EquipmentUI {
             slotElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
         });
         
-        // Create slot icon container
-        const iconContainer = document.createElement('div');
-        iconContainer.className = 'slot-icon';
-        iconContainer.style.width = '40px';
-        iconContainer.style.height = '40px';
-        iconContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-        iconContainer.style.border = '1px solid rgb(0, 233, 150)';
-        iconContainer.style.borderRadius = '3px';
-        iconContainer.style.display = 'flex';
-        iconContainer.style.justifyContent = 'center';
-        iconContainer.style.alignItems = 'center';
-        iconContainer.style.color = 'rgb(0, 233, 150)';
-        iconContainer.style.fontSize = '24px';
+        // Add empty slot icon/emoji
+        const emptyIcon = document.createElement('div');
+        emptyIcon.className = 'slot-icon-placeholder';
+        emptyIcon.style.width = '40px';
+        emptyIcon.style.height = '40px';
+        emptyIcon.style.display = 'flex';
+        emptyIcon.style.alignItems = 'center';
+        emptyIcon.style.justifyContent = 'center';
+        emptyIcon.style.color = 'rgba(255, 255, 255, 0.2)';
+        emptyIcon.style.fontSize = '24px';
+        emptyIcon.textContent = this.getSlotEmoji(slotName);
+        slotElement.appendChild(emptyIcon);
         
-        // Add slot icon or placeholder
-        const slotIcon = document.createElement('div');
-        slotIcon.textContent = this.getSlotEmoji(slotName);
-        slotIcon.style.fontSize = '20px';
-        iconContainer.appendChild(slotIcon);
-        
-        slotElement.appendChild(iconContainer);
-        
-        // Create slot name label
-        const slotLabel = document.createElement('div');
-        slotLabel.className = 'slot-name';
-        slotLabel.textContent = this.formatSlotName(slotName);
-        slotLabel.style.fontSize = '10px';
-        slotLabel.style.marginTop = '3px';
-        slotLabel.style.color = 'white';
-        slotLabel.style.textAlign = 'center';
-        slotElement.appendChild(slotLabel);
-        
-        // Create slot item (empty by default)
-        const slotItemName = document.createElement('div');
-        slotItemName.className = 'slot-item-name';
-        slotItemName.textContent = '';
-        slotItemName.style.fontSize = '9px';
-        slotItemName.style.color = '#aaa';
-        slotItemName.style.position = 'absolute';
-        slotItemName.style.bottom = '2px';
-        slotItemName.style.width = '100%';
-        slotItemName.style.textAlign = 'center';
-        slotItemName.style.overflow = 'hidden';
-        slotItemName.style.textOverflow = 'ellipsis';
-        slotItemName.style.whiteSpace = 'nowrap';
-        slotElement.appendChild(slotItemName);
-        
-        // Add click handler
+        // Click handler for slot
         slotElement.addEventListener('click', () => {
             this.handleSlotClick(slotName, isQuickSlot);
         });
         
-        // Add right-click handler for backpack slot
-        if (slotName === EQUIPMENT_SLOTS.BACKPACK) {
-            slotElement.addEventListener('contextmenu', (e) => {
-                e.preventDefault(); // Prevent default context menu
+        // Setup drag drop for equipment slots
+        if (!isQuickSlot) {
+            // Make equipment slots droppable
+            slotElement.addEventListener('dragover', (e) => {
+                // Only allow dropping if we have a draggedItem
+                if (draggedItem) {
+                    e.preventDefault(); // Allow drop
+                    slotElement.style.boxShadow = '0 0 15px rgba(0, 233, 150, 0.8)';
+                    slotElement.style.backgroundColor = 'rgba(0, 80, 50, 0.7)';
+                }
+            });
+            
+            slotElement.addEventListener('dragleave', () => {
+                slotElement.style.boxShadow = 'none';
+                slotElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+            });
+            
+            slotElement.addEventListener('drop', (e) => {
+                e.preventDefault();
+                slotElement.style.boxShadow = 'none';
+                slotElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
                 
-                const item = this.equipmentManager.slots[slotName];
-                if (item && item instanceof BagItem) {
-                    // Open the bag window
-                    item.open(e.clientX, e.clientY);
+                // Handle the dropped item
+                if (draggedItem) {
+                    // Check if this is a valid slot for the item
+                    const canEquip = this.canEquipItemToSlot(draggedItem, slotName);
+                    
+                    if (canEquip) {
+                        // Get the current item in this slot (to swap if needed)
+                        const currentItem = this.equipmentManager.slots[slotName];
+                        
+                        // Equip the dragged item
+                        const equipped = this.equipmentManager.equipItem(draggedItem, slotName);
+                        
+                        if (equipped) {
+                            console.log(`Equipped ${draggedItem.name} to ${slotName}`);
+                            
+                            // Return current item to inventory if there was one
+                            if (currentItem && window.playerInventory) {
+                                window.playerInventory.addItem(currentItem);
+                            }
+                            
+                            // Remove dragged item from its source
+                            if (draggedItemSource === 'inventory' && window.playerInventory) {
+                                window.playerInventory.removeItem(draggedItemSlot);
+                                if (window.playerInventoryUI) {
+                                    window.playerInventoryUI.updateSlot(draggedItemSlot);
+                                }
+                            }
+                        }
+                    } else {
+                        console.warn(`Cannot equip ${draggedItem.name} to ${slotName} slot`);
+                    }
+                    
+                    // Reset drag state
+                    draggedItem = null;
+                    draggedItemSource = null;
+                    draggedItemSlot = null;
+                }
+            });
+            
+            // Make equipment slots draggable (when they contain an item)
+            slotElement.addEventListener('mousedown', (e) => {
+                // Left click - drag item if there is one
+                if (e.button === 0) {
+                    const item = this.equipmentManager.slots[slotName];
+                    if (item) {
+                        // Make element draggable
+                        slotElement.draggable = true;
+                        
+                        // Set dragstart handler on the slot
+                        slotElement.addEventListener('dragstart', (e) => {
+                            draggedItem = item;
+                            draggedItemSource = 'equipment';
+                            draggedItemSlot = slotName;
+                            
+                            // Create a drag image
+                            const dragImage = document.createElement('div');
+                            dragImage.style.position = 'absolute';
+                            dragImage.style.left = '-9999px';
+                            dragImage.style.background = 'rgba(0,0,0,0.7)';
+                            dragImage.style.padding = '10px';
+                            dragImage.style.borderRadius = '5px';
+                            dragImage.textContent = item.name;
+                            document.body.appendChild(dragImage);
+                            draggedItemElement = dragImage;
+                            
+                            e.dataTransfer.setDragImage(dragImage, 10, 10);
+                            e.dataTransfer.effectAllowed = 'move';
+                        });
+                        
+                        slotElement.addEventListener('dragend', () => {
+                            slotElement.draggable = false;
+                            if (draggedItemElement) {
+                                draggedItemElement.remove();
+                                draggedItemElement = null;
+                            }
+                        });
+                    } else {
+                        slotElement.draggable = false;
+                    }
                 }
             });
         }
@@ -1615,12 +1926,81 @@ class EquipmentUI {
         } else {
             // For regular equipment slots, we can toggle equip/unequip
             if (item) {
-                this.equipmentManager.unequipItem(slotName);
+                // Special handling for bags - open the bag window instead of unequipping
+                if (slotName === EQUIPMENT_SLOTS.BACKPACK && item.type === 'bag') {
+                    // Get mouse position for bag window placement
+                    const mouseX = event ? event.clientX : window.innerWidth / 2;
+                    const mouseY = event ? event.clientY : window.innerHeight / 2;
+                    
+                    // Open the bag window
+                    if (!item.isOpen) {
+                        item.open(mouseX, mouseY);
+                        console.log(`Opened ${item.name}`);
+                    } else {
+                        // If already open, close it
+                        item.close();
+                        console.log(`Closed ${item.name}`);
+                    }
+                } else {
+                    // For other items, unequip to inventory if possible
+                    if (window.playerInventory) {
+                        // Try to add to inventory
+                        const slotIndex = window.playerInventory.addItem(item);
+                        
+                        if (slotIndex >= 0) {
+                            // Successfully added to inventory, now unequip
+                            this.equipmentManager.unequipItem(slotName);
+                            console.log(`Unequipped ${item.name} to inventory slot ${slotIndex}`);
+                        } else {
+                            // Inventory is full, show error message
+                            this.showErrorMessage("Inventory is full!");
+                            console.log(`Failed to unequip ${item.name}: inventory full`);
+                        }
+                    } else {
+                        // No inventory available, just unequip
+                        this.equipmentManager.unequipItem(slotName);
+                    }
+                }
             } else {
                 // In a real implementation, this would open inventory to select an item
                 console.log(`No item to equip in ${slotName} slot`);
             }
         }
+    }
+    
+    // Helper method to show error messages
+    showErrorMessage(message) {
+        // Create error message element
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'error-message';
+        errorMsg.textContent = message;
+        errorMsg.style.position = 'fixed';
+        errorMsg.style.top = '20%';
+        errorMsg.style.left = '50%';
+        errorMsg.style.transform = 'translateX(-50%)';
+        errorMsg.style.backgroundColor = 'rgba(200, 0, 0, 0.8)';
+        errorMsg.style.color = 'white';
+        errorMsg.style.padding = '10px 20px';
+        errorMsg.style.borderRadius = '5px';
+        errorMsg.style.fontWeight = 'bold';
+        errorMsg.style.zIndex = '2000';
+        errorMsg.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.5)';
+        
+        // Add to document
+        document.body.appendChild(errorMsg);
+        
+        // Remove after delay
+        setTimeout(() => {
+            errorMsg.style.opacity = '0';
+            errorMsg.style.transition = 'opacity 0.5s';
+            
+            // Remove from DOM after fade out
+            setTimeout(() => {
+                if (errorMsg.parentNode) {
+                    errorMsg.parentNode.removeChild(errorMsg);
+                }
+            }, 500);
+        }, 2000);
     }
     
     updateSlot(slotName, isQuickSlot) {
@@ -1961,6 +2341,23 @@ class EquipmentUI {
         for (const slotId in this.compactSlotElements) {
             this.updateCompactSlot(slotId);
         }
+    }
+
+    // Helper function to check if an item can be equipped to a slot
+    canEquipItemToSlot(item, slotName) {
+        // For backpack slot, check if the item is a bag
+        if (slotName === EQUIPMENT_SLOTS.BACKPACK && item.type === 'bag') {
+            return true;
+        }
+        
+        // For hand slots, allow tools (pickaxes, axes)
+        if ((slotName === EQUIPMENT_SLOTS.LEFT_HAND || slotName === EQUIPMENT_SLOTS.RIGHT_HAND) && 
+            (item.type === 'tool' || item.type === 'weapon')) {
+            return true;
+        }
+        
+        // For other slots, use the standard slot check
+        return item.slot === slotName;
     }
 }
 

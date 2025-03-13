@@ -1,6 +1,9 @@
 // Connect to the WebSocket server
 const socket = io.connect(window.location.hostname === 'localhost' ? 'http://localhost' : 'http://127.0.0.1');
 
+// Make socket globally available
+window.socket = socket;
+
 // Game variables
 let myPlayer = null;
 let players = {};
@@ -383,11 +386,11 @@ window.addEventListener('keydown', function(e) {
         });
     }
     
-    // Toggle equipment panel with 'E' key
+    // Toggle equipment panel with 'E' key - removed since equipment is always visible
     if (key === 'e' && !isChatFocused) {
-        if (equipmentManager) {
-            equipmentManager.toggleEquipmentPanel();
-        }
+        // No longer toggles the equipment panel
+        // Just bring focus back to the game
+        canvas.focus();
     }
     
     // Toggle inventory panel with 'I' key
@@ -475,6 +478,9 @@ function savePlayerDataLocally() {
         localStorage.setItem('playerSave', JSON.stringify(saveData));
     }
 }
+
+// Make savePlayerDataLocally globally available
+window.savePlayerDataLocally = savePlayerDataLocally;
 
 // Socket event handlers
 socket.on('loginSuccess', (data) => {
@@ -1207,9 +1213,13 @@ function handleAttack(e) {
                         
                         // Create experience orbs
                         if (expOrbManager && drops.experience) {
-                            // Create multiple orbs based on experience amount (1 orb per exp point)
-                            const orbCount = Math.min(drops.experience, 10); // Cap at 10 orbs
-                            expOrbManager.createOrbBurst(ore.x, ore.y, orbCount, drops.experience);
+                            // Calculate orb count based on experience amount
+                            // More experience = more orbs, but with a reasonable cap
+                            const expAmount = drops.experience;
+                            const orbCount = Math.min(Math.max(3, Math.ceil(expAmount / 2)), 10);
+                            
+                            // Create a burst of experience orbs
+                            expOrbManager.createOrbBurst(ore.x, ore.y, orbCount, expAmount);
                             
                             // Don't add experience directly, let the orbs handle it
                             // Instead, just add a message
