@@ -177,6 +177,27 @@ class BagItem extends EquipmentItem {
         }
         return false;
     }
+    
+    // Add a method to check if an item can be added to the bag
+    canAddItem(item) {
+        // Check if the item is valid
+        if (!item || !(item instanceof EquipmentItem)) {
+            return false;
+        }
+        
+        // Check if there's an empty slot
+        return this.contents.some(slot => slot === null);
+    }
+    
+    // Add a method to find the first empty slot
+    findEmptySlot() {
+        for (let i = 0; i < this.slots; i++) {
+            if (this.contents[i] === null) {
+                return i;
+            }
+        }
+        return -1;
+    }
 }
 
 // Bag Window UI class
@@ -627,6 +648,19 @@ class EquipmentUI {
         this.quickSlotElements = {};
         
         this.createUI();
+        
+        // Add CSS for drag and drop
+        const style = document.createElement('style');
+        style.textContent = `
+            .dragging {
+                opacity: 0.5;
+            }
+            .drag-over {
+                background-color: rgba(100, 100, 255, 0.3) !important;
+                border: 2px dashed #aaf !important;
+            }
+        `;
+        document.head.appendChild(style);
     }
     
     createUI() {
