@@ -242,7 +242,7 @@ class PickaxeAttack extends Attack {
                     console.log(`Using ${window.selectedTool.name} with strength ${damage}`);
                 } else {
                     // Apply player strength multiplier if no tool
-                    const strengthMultiplier = this.player.strength || 1;
+                const strengthMultiplier = this.player.strength || 1;
                     damage = this.baseDamage * strengthMultiplier;
                 }
                 
@@ -345,8 +345,8 @@ class PickaxeAttack extends Attack {
                         window.oreManager.removeOre(ore);
                     } else {
                         // Fallback to direct array removal
-                        window.ores.splice(i, 1);
-                        i--; // Adjust index since we removed an item
+                    window.ores.splice(i, 1);
+                    i--; // Adjust index since we removed an item
                     }
                 }
                 
@@ -601,8 +601,8 @@ class AxeAttack extends Attack {
                         window.oreManager.removeOre(ore);
                     } else {
                         // Fallback to direct array removal
-                        window.ores.splice(i, 1);
-                        i--; // Adjust index since we removed an item
+                    window.ores.splice(i, 1);
+                    i--; // Adjust index since we removed an item
                     }
                 }
                 

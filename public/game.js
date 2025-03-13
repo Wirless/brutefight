@@ -390,6 +390,10 @@ window.addEventListener('keydown', function(e) {
     if (key === 'e' && !isChatFocused) {
         // No longer toggles the equipment panel
         // Just bring focus back to the game
+        if (window.equipmentManager) {
+            window.equipmentManager.toggleEquipmentPanel();
+        }
+        
         canvas.focus();
     }
     
