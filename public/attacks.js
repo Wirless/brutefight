@@ -114,9 +114,8 @@ class PickaxeAttack extends Attack {
         const screenX = this.player.x - Math.floor(cameraX);
         const screenY = this.player.y - Math.floor(cameraY);
         
-        // Calculate perpendicular direction (90 degrees to cursor direction)
-        // This creates a swing path perpendicular to the cursor direction
-        const perpDirection = this.direction + Math.PI/2;
+        // Use the cursor direction directly (not perpendicular)
+        const swingDirection = this.direction;
         
         // Calculate swing position
         // Start from one side (-1), pass through center (0), end at other side (1)
@@ -127,9 +126,9 @@ class PickaxeAttack extends Attack {
         const handleLength = this.length * Math.abs(swingPosition);
         
         // Calculate handle direction
-        // If swingPosition is negative, we're on the starting side
-        // If swingPosition is positive, we're on the ending side
-        const handleDirection = swingPosition < 0 ? perpDirection : perpDirection + Math.PI;
+        // If swingPosition is negative, we're on the starting side (opposite cursor)
+        // If swingPosition is positive, we're on the ending side (toward cursor)
+        const handleDirection = swingPosition < 0 ? swingDirection + Math.PI : swingDirection;
         
         // Calculate handle end position
         const handleEndX = screenX + Math.cos(handleDirection) * handleLength;
@@ -163,10 +162,10 @@ class PickaxeAttack extends Attack {
             ctx.lineWidth = 2;
             
             // Draw line from start to end position
-            const startX = screenX + Math.cos(perpDirection) * this.length;
-            const startY = screenY + Math.sin(perpDirection) * this.length;
-            const endX = screenX + Math.cos(perpDirection + Math.PI) * this.length;
-            const endY = screenY + Math.sin(perpDirection + Math.PI) * this.length;
+            const startX = screenX + Math.cos(swingDirection + Math.PI) * this.length;
+            const startY = screenY + Math.sin(swingDirection + Math.PI) * this.length;
+            const endX = screenX + Math.cos(swingDirection) * this.length;
+            const endY = screenY + Math.sin(swingDirection) * this.length;
             
             ctx.moveTo(startX, startY);
             ctx.lineTo(endX, endY);
@@ -191,8 +190,8 @@ class PickaxeAttack extends Attack {
         
         const hitRocks = [];
         
-        // Calculate perpendicular direction to cursor
-        const perpDirection = this.direction + Math.PI/2;
+        // Use cursor direction directly
+        const swingDirection = this.direction;
         
         // Check each rock
         for (let i = 0; i < window.rocks.length; i++) {
@@ -206,13 +205,13 @@ class PickaxeAttack extends Attack {
             // Calculate angle to rock
             const angleToRock = Math.atan2(dy, dx);
             
-            // Calculate angle difference to perpendicular direction
-            let angleDiff = angleToRock - perpDirection;
+            // Calculate angle difference to swing direction
+            let angleDiff = angleToRock - swingDirection;
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
             
             // Check if rock is within range and along the swing path
-            // We check both sides of the perpendicular line
+            // We check both the cursor direction and the opposite direction
             if (distance < this.range && 
                 (Math.abs(angleDiff) < Math.PI/6 || Math.abs(angleDiff - Math.PI) < Math.PI/6)) {
                 
