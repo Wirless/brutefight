@@ -93,13 +93,13 @@ class PickaxeAttack extends Attack {
         
         this.hitChecked = false;
         
-        // Schedule hit check at 50% through the swing - when pickaxe passes through center
+        // Schedule hit check at 90% through the swing - when pickaxe reaches the target
         setTimeout(() => {
             if (this.isActive) {
                 this.checkHits();
                 this.hitChecked = true;
             }
-        }, this.getDuration() * 0.5);
+        }, this.getDuration() * 0.9);
         
         return true;
     }
@@ -114,7 +114,7 @@ class PickaxeAttack extends Attack {
         const screenX = this.player.x - Math.floor(cameraX);
         const screenY = this.player.y - Math.floor(cameraY);
         
-        // Use the cursor direction directly (not perpendicular)
+        // Use the cursor direction directly
         const swingDirection = this.direction;
         
         // Calculate swing position
@@ -172,16 +172,33 @@ class PickaxeAttack extends Attack {
             ctx.stroke();
         }
         
-        // Draw impact effect when hitting
-        if (Math.abs(swingPosition) < 0.2 && this.hitChecked) {
-            // Draw impact flash
+        // Draw impact effect when hitting at the end of the swing
+        if (progress > 0.9 && this.hitChecked) {
+            // Draw impact flash at the end of the pickaxe
             const impactSize = 15;
-            const impactAlpha = 0.7 - Math.abs(swingPosition) * 3.5; // Fades quickly
+            const impactAlpha = 0.7 - (progress - 0.9) * 7; // Fades quickly
             
             ctx.beginPath();
-            ctx.arc(screenX, screenY, impactSize, 0, Math.PI * 2);
+            ctx.arc(headEndX, headEndY, impactSize, 0, Math.PI * 2);
             ctx.fillStyle = `rgba(255, 255, 255, ${impactAlpha})`;
             ctx.fill();
+            
+            // Draw impact lines
+            const lineCount = 5;
+            for (let i = 0; i < lineCount; i++) {
+                const lineAngle = swingDirection + (Math.random() - 0.5) * Math.PI;
+                const lineLength = 5 + Math.random() * 10;
+                
+                ctx.beginPath();
+                ctx.moveTo(headEndX, headEndY);
+                ctx.lineTo(
+                    headEndX + Math.cos(lineAngle) * lineLength,
+                    headEndY + Math.sin(lineAngle) * lineLength
+                );
+                ctx.strokeStyle = `rgba(255, 220, 150, ${impactAlpha})`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
         }
     }
     
@@ -210,11 +227,9 @@ class PickaxeAttack extends Attack {
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
             
-            // Check if rock is within range and along the swing path
-            // We check both the cursor direction and the opposite direction
-            if (distance < this.range && 
-                (Math.abs(angleDiff) < Math.PI/6 || Math.abs(angleDiff - Math.PI) < Math.PI/6)) {
-                
+            // Check if rock is within range and in the direction of the cursor
+            // Only check in the forward direction (toward cursor), not the opposite side
+            if (distance < this.range && Math.abs(angleDiff) < Math.PI/6) {
                 // Rock is hit!
                 window.hitRocks.add(i);
                 window.rockHitTimes.set(i, Date.now());
