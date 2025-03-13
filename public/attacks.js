@@ -82,6 +82,9 @@ class PickaxeAttack extends Attack {
         this.range = 110; // Maximum reach
         this.length = 50; // Length of the pickaxe
         this.hitChecked = false;
+        this.baseDamage = 5; // Base damage is now 5
+        this.hitSound = new Audio('sounds/hit.mp3'); // Load hit sound
+        this.hitSound.volume = 0.3; // Set volume to 30%
     }
     
     getDuration() {
@@ -203,105 +206,80 @@ class PickaxeAttack extends Attack {
     }
     
     checkHits() {
-        if (!this.isActive || !window.rocks || this.hitChecked) return [];
+        if (!this.isActive || !window.ores || this.hitChecked) return [];
         
-        const hitRocks = [];
+        const hitOres = [];
         
         // Use cursor direction directly
         const swingDirection = this.direction;
         
-        // Check each rock
-        for (let i = 0; i < window.rocks.length; i++) {
-            const rock = window.rocks[i];
+        // Check each ore
+        for (let i = 0; i < window.ores.length; i++) {
+            const ore = window.ores[i];
             
-            // Calculate distance from rock to player
-            const dx = rock.x - this.player.x;
-            const dy = rock.y - this.player.y;
+            // Calculate distance from ore to player
+            const dx = ore.x - this.player.x;
+            const dy = ore.y - this.player.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // Calculate angle to rock
-            const angleToRock = Math.atan2(dy, dx);
+            // Calculate angle to ore
+            const angleToOre = Math.atan2(dy, dx);
             
             // Calculate angle difference to swing direction
-            let angleDiff = angleToRock - swingDirection;
+            let angleDiff = angleToOre - swingDirection;
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
             
-            // Check if rock is within range and in the direction of the cursor
+            // Check if ore is within range and in the direction of the cursor
             // Only check in the forward direction (toward cursor), not the opposite side
             if (distance < this.range && Math.abs(angleDiff) < Math.PI/6) {
-                // Rock is hit!
-                window.hitRocks.add(i);
-                window.rockHitTimes.set(i, Date.now());
+                // Calculate damage based on player's strength
+                const strengthMultiplier = this.player.strength || 1;
+                const damage = this.baseDamage * strengthMultiplier;
+                
+                // Ore is hit!
+                const destroyed = ore.hit(damage);
+                
+                // Play hit sound
+                this.playHitSound();
                 
                 // Generate particles
-                this.generateHitParticles(rock);
+                const particles = ore.generateParticles();
+                if (particles.length > 0) {
+                    window.rockParticles.push(...particles);
+                }
                 
-                console.log(`Hit rock at (${rock.x}, ${rock.y})`);
+                // If ore is destroyed, handle drops and remove it
+                if (destroyed) {
+                    const drops = ore.getDrops();
+                    console.log(`Ore destroyed! Drops:`, drops);
+                    // TODO: Add drops to player inventory
+                    
+                    // Remove the ore
+                    window.ores.splice(i, 1);
+                    i--; // Adjust index since we removed an item
+                }
+                
+                hitOres.push(i);
+                console.log(`Hit ore at (${ore.x}, ${ore.y}), health: ${ore.health}, damage: ${damage}`);
             }
         }
         
-        return hitRocks;
+        return hitOres;
     }
     
-    generateHitParticles(rock) {
-        if (!window.rockParticles) return;
+    playHitSound() {
+        // Clone the sound to allow multiple overlapping sounds
+        const sound = this.hitSound.cloneNode();
         
-        // Many more smaller particles for spark effect
-        const particleCount = 30 + Math.floor(Math.random() * 15);
+        // Add some pitch variation
+        sound.playbackRate = 0.9 + Math.random() * 0.2;
         
-        for (let i = 0; i < particleCount; i++) {
-            // Random position around the impact point
-            const angle = Math.random() * Math.PI * 2;
-            const distance = Math.random() * rock.width / 3;
-            
-            // Spark colors: yellow, white, and a few red
-            let color;
-            const colorRoll = Math.random();
-            if (colorRoll < 0.5) {
-                // Yellow sparks (50%)
-                color = `rgb(255, ${200 + Math.random() * 55}, 0)`;
-            } else if (colorRoll < 0.9) {
-                // White sparks (40%)
-                const brightness = 220 + Math.random() * 35;
-                color = `rgb(${brightness}, ${brightness}, ${brightness})`;
-            } else {
-                // Red sparks (10%)
-                color = `rgb(${200 + Math.random() * 55}, ${50 + Math.random() * 30}, ${20 + Math.random() * 30})`;
-            }
-            
-            // Create smaller, faster particles with shorter lifespans
-            window.rockParticles.push({
-                x: rock.x + Math.cos(angle) * distance,
-                y: rock.y + Math.sin(angle) * distance,
-                // Higher velocity for spark effect
-                vx: Math.cos(angle) * (2 + Math.random() * 4),
-                vy: Math.sin(angle) * (2 + Math.random() * 4) - Math.random() * 2,
-                // Smaller size for sparks
-                size: 0.5 + Math.random() * 1.5,
-                // Shorter lifetime for sparks
-                life: 200 + Math.random() * 300,
-                created: Date.now(),
-                color: color
-            });
-        }
-        
-        // Add a few larger rock fragments
-        for (let i = 0; i < 5; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const distance = Math.random() * rock.width / 4;
-            
-            window.rockParticles.push({
-                x: rock.x + Math.cos(angle) * distance,
-                y: rock.y + Math.sin(angle) * distance,
-                vx: Math.cos(angle) * (1 + Math.random() * 2),
-                vy: Math.sin(angle) * (1 + Math.random() * 2) - Math.random() * 3,
-                size: 1.5 + Math.random() * 2,
-                life: 400 + Math.random() * 300,
-                created: Date.now(),
-                color: rock.color // Use the rock's color
-            });
-        }
+        // Play the sound
+        sound.play().catch(err => {
+            // Handle autoplay restrictions
+            console.log('Sound play failed:', err);
+        });
     }
 }
 
@@ -396,20 +374,20 @@ class AxeAttack extends Attack {
     
     checkHits() {
         // Similar to pickaxe but with different parameters
-        if (!this.isActive || !window.rocks || this.hitChecked) return [];
+        if (!this.isActive || !window.ores || this.hitChecked) return [];
         
-        const hitRocks = [];
+        const hitOres = [];
         
         // Calculate attack area (wider arc for axe)
         const attackAngle = Math.PI * 0.6; // 108 degree attack arc (wider than pickaxe)
         
-        // Check each rock
-        for (let i = 0; i < window.rocks.length; i++) {
-            const rock = window.rocks[i];
+        // Check each ore
+        for (let i = 0; i < window.ores.length; i++) {
+            const ore = window.ores[i];
             
-            // Calculate distance and angle to rock
-            const dx = rock.x - this.player.x;
-            const dy = rock.y - this.player.y;
+            // Calculate distance and angle to ore
+            const dx = ore.x - this.player.x;
+            const dy = ore.y - this.player.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
             const angle = Math.atan2(dy, dx);
             
@@ -418,60 +396,35 @@ class AxeAttack extends Attack {
             while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
             while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
             
-            // Check if rock is within attack range and angle
+            // Check if ore is within attack range and angle
             if (distance < this.range && Math.abs(angleDiff) < attackAngle / 2) {
-                // Rock is hit!
-                window.hitRocks.add(i);
-                window.rockHitTimes.set(i, Date.now());
+                // Ore is hit!
+                const damage = 10 + Math.floor(Math.random() * 5);
+                const destroyed = ore.hit(damage);
                 
                 // Generate wood-like particles instead of rock sparks
-                this.generateHitParticles(rock);
+                const particles = ore.generateParticles();
+                if (particles.length > 0) {
+                    window.rockParticles.push(...particles);
+                }
                 
-                console.log(`Hit rock with axe at (${rock.x}, ${rock.y})`);
+                // If ore is destroyed, handle drops and remove it
+                if (destroyed) {
+                    const drops = ore.getDrops();
+                    console.log(`Ore destroyed! Drops:`, drops);
+                    // TODO: Add drops to player inventory
+                    
+                    // Remove the ore
+                    window.ores.splice(i, 1);
+                    i--; // Adjust index since we removed an item
+                }
+                
+                hitOres.push(i);
+                console.log(`Hit ore with axe at (${ore.x}, ${ore.y}), health: ${ore.health}`);
             }
         }
         
-        return hitRocks;
-    }
-    
-    generateHitParticles(rock) {
-        if (!window.rockParticles) return;
-        
-        // Fewer particles for axe hit
-        const particleCount = 15 + Math.floor(Math.random() * 10);
-        
-        for (let i = 0; i < particleCount; i++) {
-            // Random position around the impact point
-            const angle = Math.random() * Math.PI * 2;
-            const distance = Math.random() * rock.width / 3;
-            
-            // Wood chip colors: browns and tans
-            const colorRoll = Math.random();
-            let color;
-            
-            if (colorRoll < 0.4) {
-                // Light brown
-                color = `rgb(${150 + Math.random() * 30}, ${100 + Math.random() * 20}, ${50 + Math.random() * 20})`;
-            } else if (colorRoll < 0.8) {
-                // Medium brown
-                color = `rgb(${120 + Math.random() * 20}, ${80 + Math.random() * 20}, ${40 + Math.random() * 20})`;
-            } else {
-                // Dark brown
-                color = `rgb(${90 + Math.random() * 20}, ${60 + Math.random() * 20}, ${30 + Math.random() * 20})`;
-            }
-            
-            // Create wood chip particles
-            window.rockParticles.push({
-                x: rock.x + Math.cos(angle) * distance,
-                y: rock.y + Math.sin(angle) * distance,
-                vx: Math.cos(angle) * (1 + Math.random() * 3),
-                vy: Math.sin(angle) * (1 + Math.random() * 3) - Math.random() * 2,
-                size: 1 + Math.random() * 2,
-                life: 300 + Math.random() * 400,
-                created: Date.now(),
-                color: color
-            });
-        }
+        return hitOres;
     }
 }
 

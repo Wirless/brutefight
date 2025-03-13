@@ -63,8 +63,10 @@ const grassColors = [
 ];
 const GRASS_TILE_SIZE = 16; // Smaller tiles for more detailed grass
 
+// Replace the rocks array with ores
+const ores = [];
+
 // Rock obstacles
-const rocks = [];
 const ROCK_COUNT = 100; // Number of rocks to generate
 const ROCK_MIN_SIZE = { width: 30, height: 45 };
 const ROCK_MAX_SIZE = { width: 50, height: 80 };
@@ -107,6 +109,10 @@ let rockHitTimes = new Map();
 const rockHitDuration = 500;
 let rockParticles = [];
 
+// Add to variable declarations
+let equipmentManager = null;
+let selectedTool = null;
+
 // Generate grass patterns (pre-rendered grass patterns for performance)
 function generateGrassPatterns() {
     for (let i = 0; i < 5; i++) {
@@ -134,13 +140,13 @@ function generateGrassPatterns() {
     }
 }
 
-// Generate random rocks around a position
-function generateRocksAroundPosition(centerX, centerY, count) {
-    const newRocks = [];
+// Replace generateRocksAroundPosition with generateOresAroundPosition
+function generateOresAroundPosition(centerX, centerY, count) {
+    const newOres = [];
     let attempts = 0;
     const maxAttempts = count * 10; // Limit attempts to avoid infinite loops
     
-    while (newRocks.length < count && attempts < maxAttempts) {
+    while (newOres.length < count && attempts < maxAttempts) {
         attempts++;
         
         // Generate random position within spawn radius
@@ -149,79 +155,39 @@ function generateRocksAroundPosition(centerX, centerY, count) {
         const x = centerX + Math.cos(angle) * distance;
         const y = centerY + Math.sin(angle) * distance;
         
-        // Random size within constraints
-        const width = ROCK_MIN_SIZE.width + Math.random() * (ROCK_MAX_SIZE.width - ROCK_MIN_SIZE.width);
-        const height = ROCK_MIN_SIZE.height + Math.random() * (ROCK_MAX_SIZE.height - ROCK_MIN_SIZE.height);
-        
-        // Check spacing with existing rocks (square detection)
+        // Check spacing with existing ores (square detection)
         let tooClose = false;
         
-        // Check against existing rocks in the game
-        for (const rock of rocks) {
-            if (Math.abs(x - rock.x) < ROCK_MIN_SPACING && 
-                Math.abs(y - rock.y) < ROCK_MIN_SPACING) {
+        // Check against existing ores in the game
+        for (const ore of ores) {
+            if (Math.abs(x - ore.x) < ROCK_MIN_SPACING && 
+                Math.abs(y - ore.y) < ROCK_MIN_SPACING) {
                 tooClose = true;
                 break;
             }
         }
         
-        // Check against rocks we're about to add
-        for (const rock of newRocks) {
-            if (Math.abs(x - rock.x) < ROCK_MIN_SPACING && 
-                Math.abs(y - rock.y) < ROCK_MIN_SPACING) {
+        // Check against ores we're about to add
+        for (const ore of newOres) {
+            if (Math.abs(x - ore.x) < ROCK_MIN_SPACING && 
+                Math.abs(y - ore.y) < ROCK_MIN_SPACING) {
                 tooClose = true;
                 break;
             }
         }
         
-        // If too close to another rock, skip this one
+        // If too close to another ore, skip this one
         if (tooClose) continue;
         
-        // Random color
-        const color = ROCK_COLORS[Math.floor(Math.random() * ROCK_COLORS.length)];
-        
-        // Generate random shape points (5-8 points)
-        const pointCount = 5 + Math.floor(Math.random() * 4);
-        const points = [];
-        
-        for (let j = 0; j < pointCount; j++) {
-            // Generate points around the perimeter of the rock
-            const pointAngle = (j / pointCount) * Math.PI * 2;
-            
-            // Add some randomness to the radius to create irregular shapes
-            const radiusX = width / 2 * (0.8 + Math.random() * 0.4);
-            const radiusY = height / 2 * (0.8 + Math.random() * 0.4);
-            
-            points.push({
-                x: x + Math.cos(pointAngle) * radiusX,
-                y: y + Math.sin(pointAngle) * radiusY
-            });
-        }
-        
-        // Create rock object
-        const rock = {
-            x,
-            y,
-            width,
-            height,
-            color,
-            points,
-            // Pre-calculate a simplified collision box
-            collisionBox: {
-                left: x - width / 2,
-                right: x + width / 2,
-                top: y - height / 2,
-                bottom: y + height / 2
-            }
-        };
-        
-        newRocks.push(rock);
+        // Create a new Stone ore
+        const stone = new window.Ores.Stone(x, y);
+        newOres.push(stone);
     }
     
-    // Add the new rocks to the global rocks array
-    rocks.push(...newRocks);
-    console.log(`Generated ${newRocks.length} rocks around position (${centerX}, ${centerY})`);
-    return newRocks;
+    // Add the new ores to the global ores array
+    ores.push(...newOres);
+    console.log(`Generated ${newOres.length} ores around position (${centerX}, ${centerY})`);
+    return newOres;
 }
 
 // Call once at start
@@ -487,6 +453,35 @@ window.addEventListener('keydown', function(e) {
             message: `${username} equips an axe.`
         });
     }
+    
+    // Toggle equipment panel with 'E' key
+    if (key === 'e' && !isChatFocused) {
+        if (equipmentManager) {
+            equipmentManager.toggleEquipmentPanel();
+        }
+    }
+    
+    // Handle number keys for quick slots (1-0)
+    if (!isNaN(parseInt(key)) && key >= '0' && key <= '9' && !isChatFocused) {
+        if (equipmentManager) {
+            equipmentManager.handleHotkey(key);
+            
+            // Update the selected tool
+            selectedTool = equipmentManager.getActiveQuickSlotItem();
+            
+            // Show the selected tool in debug info
+            if (selectedTool) {
+                debugInfo.textContent = `Selected tool: ${selectedTool.name} (${selectedTool.description})`;
+            } else {
+                debugInfo.textContent = `No tool selected`;
+            }
+            
+            // Wait 2 seconds, then restore debug info
+            setTimeout(() => {
+                updateDebugInfo();
+            }, 2000);
+        }
+    }
 });
 
 window.addEventListener('keyup', function(e) {
@@ -559,8 +554,8 @@ socket.on('loginSuccess', (data) => {
     cameraX = myPlayer.x - canvas.width / 2;
     cameraY = myPlayer.y - canvas.height / 2;
     
-    // Generate initial rocks around player
-    generateRocksAroundPosition(myPlayer.x, myPlayer.y, 20);
+    // Generate initial ores around player
+    generateOresAroundPosition(myPlayer.x, myPlayer.y, 20);
     
     // Switch from login panel to game panel
     loginPanel.style.display = 'none';
@@ -582,6 +577,21 @@ socket.on('loginSuccess', (data) => {
         axe: new window.Attacks.AxeAttack(myPlayer, ctx)
     };
     currentAttack = availableAttacks.pickaxe; // Default attack
+    
+    // Initialize equipment manager
+    equipmentManager = new window.Equipment.EquipmentManager(myPlayer);
+    
+    // Add some example tools to quick slots
+    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenPickaxe, window.Equipment.QUICK_SLOTS['1']);
+    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.stonePickaxe, window.Equipment.QUICK_SLOTS['2']);
+    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.ironPickaxe, window.Equipment.QUICK_SLOTS['3']);
+    equipmentManager.equipItem(window.Equipment.EQUIPMENT_EXAMPLES.woodenAxe, window.Equipment.QUICK_SLOTS['4']);
+    
+    // Set the active quick slot to 1
+    equipmentManager.setActiveQuickSlot('1');
+    
+    // Set the selected tool
+    selectedTool = equipmentManager.getActiveQuickSlotItem();
 });
 
 socket.on('playerList', (playersData) => {
@@ -614,8 +624,59 @@ socket.on('playerJoined', (joinedUsername) => {
     });
 });
 
-// Update the list of connected players
+// Early in the file, add this function to create the player counter
+function createPlayerCountTab() {
+    const playerCountTab = document.createElement('div');
+    playerCountTab.id = 'playerCountTab';
+    playerCountTab.className = 'player-count-tab';
+    playerCountTab.style.position = 'fixed';
+    playerCountTab.style.top = '0';
+    playerCountTab.style.right = '20px';
+    playerCountTab.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    playerCountTab.style.color = 'white';
+    playerCountTab.style.padding = '5px 15px';
+    playerCountTab.style.borderRadius = '0 0 5px 5px';
+    playerCountTab.style.fontSize = '14px';
+    playerCountTab.style.fontWeight = 'bold';
+    playerCountTab.style.cursor = 'pointer';
+    playerCountTab.style.zIndex = '100';
+    playerCountTab.style.display = 'flex';
+    playerCountTab.style.alignItems = 'center';
+    playerCountTab.style.gap = '5px';
+    
+    // Add player icon
+    const playerIcon = document.createElement('span');
+    playerIcon.textContent = '👥';
+    playerIcon.style.fontSize = '16px';
+    playerCountTab.appendChild(playerIcon);
+    
+    // Add player count
+    const playerCount = document.createElement('span');
+    playerCount.id = 'playerCount';
+    playerCount.textContent = '0';
+    playerCountTab.appendChild(playerCount);
+    
+    // When clicked, toggle the player list
+    playerCountTab.addEventListener('click', () => {
+        const playersList = document.getElementById('playersList');
+        if (playersList.style.display === 'none') {
+            playersList.style.display = 'block';
+        } else {
+            playersList.style.display = 'none';
+        }
+    });
+    
+    document.body.appendChild(playerCountTab);
+}
+
+// Modify the updatePlayersList function to update the player count
 function updatePlayersList() {
+    // Update the player count in the tab
+    const playerCount = document.getElementById('playerCount');
+    const count = Object.keys(players).length;
+    playerCount.textContent = count;
+    
+    // Update the player list itself
     playersListItems.innerHTML = '';
     for (const playerName in players) {
         const li = document.createElement('li');
@@ -629,156 +690,46 @@ function updatePlayersList() {
     }
 }
 
-// Check if player collides with any rocks
-function checkRockCollisions(newX, newY) {
+// Modify the player list style when document loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Create the player count tab
+    createPlayerCountTab();
+    
+    // Style the existing player list
+    const playersList = document.getElementById('playersList');
+    if (playersList) {
+        playersList.style.position = 'fixed';
+        playersList.style.top = '30px'; // Position below the tab
+        playersList.style.right = '20px';
+        playersList.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        playersList.style.border = '1px solid #444';
+        playersList.style.borderRadius = '5px';
+        playersList.style.padding = '10px';
+        playersList.style.minWidth = '150px';
+        playersList.style.maxHeight = '300px';
+        playersList.style.overflowY = 'auto';
+        playersList.style.zIndex = '99';
+        playersList.style.display = 'none'; // Hidden by default
+    }
+});
+
+// Update the checkRockCollisions function to use ores
+function checkOreCollisions(newX, newY) {
     // Quick check using player collision radius
-    for (const rock of rocks) {
-        // First do a quick bounding box check
-        if (newX + PLAYER_COLLISION_RADIUS > rock.collisionBox.left &&
-            newX - PLAYER_COLLISION_RADIUS < rock.collisionBox.right &&
-            newY + PLAYER_COLLISION_RADIUS > rock.collisionBox.top &&
-            newY - PLAYER_COLLISION_RADIUS < rock.collisionBox.bottom) {
-            
-            // For more accurate collision, check distance to center
-            const dx = newX - rock.x;
-            const dy = newY - rock.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            // If player is too close to rock center, collision detected
-            if (distance < (rock.width + rock.height) / 4 + PLAYER_COLLISION_RADIUS) {
-                return true; // Collision detected
-            }
+    for (const ore of ores) {
+        if (ore.checkCollision(newX, newY, PLAYER_COLLISION_RADIUS)) {
+            return true; // Collision detected
         }
     }
     
     return false; // No collision
 }
 
-// Draw rocks on the canvas
-function drawRocks() {
-    const now = Date.now();
-    
-    // Only draw rocks that are visible on screen
-    for (let i = 0; i < rocks.length; i++) {
-        const rock = rocks[i];
-        
-        // Check if rock is visible on screen (with some buffer)
-        const screenX = rock.x - Math.floor(cameraX);
-        const screenY = rock.y - Math.floor(cameraY);
-        
-        if (screenX + rock.width / 2 < 0 || screenX - rock.width / 2 > canvas.width ||
-            screenY + rock.height / 2 < 0 || screenY - rock.height / 2 > canvas.height) {
-            continue; // Skip rocks that are off-screen
-        }
-        
-        // Draw the rock shape
-        ctx.fillStyle = rock.color;
-        ctx.beginPath();
-        
-        // Draw the rock shape using its points
-        if (rock.points.length > 0) {
-            const firstPoint = rock.points[0];
-            ctx.moveTo(
-                firstPoint.x - Math.floor(cameraX),
-                firstPoint.y - Math.floor(cameraY)
-            );
-            
-            for (let j = 1; j < rock.points.length; j++) {
-                const point = rock.points[j];
-                ctx.lineTo(
-                    point.x - Math.floor(cameraX),
-                    point.y - Math.floor(cameraY)
-                );
-            }
-            
-            // Close the path back to the first point
-            ctx.closePath();
-        }
-        
-        // Fill and stroke the rock
-        ctx.fill();
-        
-        // Add a darker stroke for definition
-        ctx.strokeStyle = '#333333';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        
-        // Add some texture/detail to the rock
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        for (let j = 0; j < 5; j++) {
-            const detailX = rock.x - rock.width / 3 + Math.random() * rock.width / 1.5 - Math.floor(cameraX);
-            const detailY = rock.y - rock.height / 3 + Math.random() * rock.height / 1.5 - Math.floor(cameraY);
-            const detailSize = 2 + Math.random() * 5;
-            
-            ctx.beginPath();
-            ctx.arc(detailX, detailY, detailSize, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        
-        // Check if rock was hit recently
-        if (hitRocks.has(i)) {
-            const hitTime = rockHitTimes.get(i);
-            const timeSinceHit = now - hitTime;
-            
-            if (timeSinceHit < rockHitDuration) {
-                // Draw hit effect (red glow)
-                const alpha = 0.7 * (1 - timeSinceHit / rockHitDuration);
-                
-                ctx.save();
-                ctx.globalAlpha = alpha;
-                ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-                
-                // Draw glow effect
-                if (rock.points.length > 0) {
-                    ctx.beginPath();
-                    const firstPoint = rock.points[0];
-                    ctx.moveTo(
-                        firstPoint.x - Math.floor(cameraX),
-                        firstPoint.y - Math.floor(cameraY)
-                    );
-                    
-                    for (let j = 1; j < rock.points.length; j++) {
-                        const point = rock.points[j];
-                        ctx.lineTo(
-                            point.x - Math.floor(cameraX),
-                            point.y - Math.floor(cameraY)
-                        );
-                    }
-                    
-                    ctx.closePath();
-                    ctx.fill();
-                }
-                
-                ctx.restore();
-            } else {
-                // Hit effect expired
-                hitRocks.delete(i);
-                rockHitTimes.delete(i);
-            }
-        }
-    }
-    
-    // Draw rock particles
-    for (const particle of rockParticles) {
-        const screenX = particle.x - Math.floor(cameraX);
-        const screenY = particle.y - Math.floor(cameraY);
-        
-        // Skip if off-screen
-        if (screenX < 0 || screenX > canvas.width || screenY < 0 || screenY > canvas.height) {
-            continue;
-        }
-        
-        // Calculate opacity based on remaining life
-        const lifeRatio = 1 - (now - particle.created) / particle.life;
-        const alpha = lifeRatio;
-        
-        // Draw particle
-        ctx.beginPath();
-        ctx.arc(screenX, screenY, particle.size, 0, Math.PI * 2);
-        ctx.fillStyle = particle.color;
-        ctx.globalAlpha = alpha;
-        ctx.fill();
-        ctx.globalAlpha = 1.0;
+// Update the drawRocks function to use ores
+function drawOres() {
+    // Draw all visible ores
+    for (let i = 0; i < ores.length; i++) {
+        ores[i].draw(ctx, cameraX, cameraY);
     }
 }
 
@@ -801,18 +752,18 @@ function updatePlayerPosition(deltaTime) {
         const newX = myPlayer.x + velocity.x * moveDistance;
         const newY = myPlayer.y + velocity.y * moveDistance;
         
-        // Check for rock collisions
-        if (!checkRockCollisions(newX, newY)) {
+        // Check for ore collisions
+        if (!checkOreCollisions(newX, newY)) {
             // No collision, update position
             myPlayer.x = newX;
             myPlayer.y = newY;
         } else {
             // Try moving only in X direction
-            if (!checkRockCollisions(newX, oldY)) {
+            if (!checkOreCollisions(newX, oldY)) {
                 myPlayer.x = newX;
             }
             // Try moving only in Y direction
-            else if (!checkRockCollisions(oldX, newY)) {
+            else if (!checkOreCollisions(oldX, newY)) {
                 myPlayer.y = newY;
             }
             // If both directions cause collisions, player doesn't move
@@ -830,10 +781,10 @@ function updatePlayerPosition(deltaTime) {
         cameraX = myPlayer.x - canvas.width / 2;
         cameraY = myPlayer.y - canvas.height / 2;
         
-        // Check if we should generate more rocks
-        // Every 500 units of movement, generate some new rocks
+        // Check if we should generate more ores
+        // Every 500 units of movement, generate some new ores
         if (Math.floor(distanceMoved / 500) > 0) {
-            generateRocksAroundPosition(myPlayer.x, myPlayer.y, 5);
+            generateOresAroundPosition(myPlayer.x, myPlayer.y, 5);
             distanceMoved = distanceMoved % 500;
         }
         
@@ -1113,8 +1064,11 @@ function startGameLoop() {
         // Draw floor
         drawFloor();
         
-        // Draw rocks
-        drawRocks();
+        // Draw ores
+        drawOres();
+        
+        // Draw particles
+        drawParticles();
         
         // Draw all players
         for (const playerName in players) {
@@ -1168,11 +1122,11 @@ function updateAttack(deltaTime) {
         
         // Update hit rocks visual effect
         const now = Date.now();
-        for (const [rockIndex, hitTime] of rockHitTimes.entries()) {
+        for (const [oreIndex, hitTime] of rockHitTimes.entries()) {
             const timeSinceHit = now - hitTime;
             if (timeSinceHit >= rockHitDuration) {
-                hitRocks.delete(rockIndex);
-                rockHitTimes.delete(rockIndex);
+                hitRocks.delete(oreIndex);
+                rockHitTimes.delete(oreIndex);
             }
         }
         
@@ -1195,9 +1149,62 @@ function updateAttack(deltaTime) {
     }
 }
 
-// Make rocks accessible to the attack system
-window.rocks = rocks;
+// Draw rock particles
+function drawParticles() {
+    const now = Date.now();
+    
+    for (const particle of rockParticles) {
+        const screenX = particle.x - Math.floor(cameraX);
+        const screenY = particle.y - Math.floor(cameraY);
+        
+        // Skip if off-screen
+        if (screenX < 0 || screenX > canvas.width || screenY < 0 || screenY > canvas.height) {
+            continue;
+        }
+        
+        // Calculate opacity based on remaining life
+        const lifeRatio = 1 - (now - particle.created) / particle.life;
+        const alpha = lifeRatio;
+        
+        // Set fill style with proper alpha
+        ctx.fillStyle = particle.color;
+        ctx.globalAlpha = alpha;
+        
+        // Draw particle based on shape
+        if (particle.shape === 'square') {
+            // Draw square particle
+            const halfSize = particle.size / 2;
+            ctx.fillRect(screenX - halfSize, screenY - halfSize, particle.size, particle.size);
+        } else {
+            // Draw circular particle (default)
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, particle.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Reset global alpha
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+// Make ores accessible to the attack system
+window.ores = ores;
 window.rockParticles = rockParticles;
 window.hitRocks = hitRocks;
 window.rockHitTimes = rockHitTimes;
-window.rockHitDuration = rockHitDuration; 
+window.rockHitDuration = rockHitDuration;
+
+// Preload sounds
+function preloadSounds() {
+    // Create sounds directory if it doesn't exist
+    console.log('Preloading sounds...');
+    
+    // Check if sounds directory exists, if not, show a warning
+    const hitSound = new Audio('sounds/hit.mp3');
+    hitSound.addEventListener('error', () => {
+        console.warn('Sound file "sounds/hit.mp3" not found. Please create a sounds directory and add hit.mp3.');
+    });
+}
+
+// Call preloadSounds during initialization
+preloadSounds(); 

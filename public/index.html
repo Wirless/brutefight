@@ -241,8 +241,8 @@
         </div>
         
         <!-- Players List -->
-        <div id="playersList">
-            <h3>Connected Players</h3>
+        <div id="playersList" class="game-panel">
+            <h3>Online Players</h3>
             <ul id="playersListItems"></ul>
         </div>
         
@@ -256,8 +256,10 @@
     <!-- Socket.io library -->
     <script src="/socket.io/socket.io.js"></script>
     
-    <!-- Game client script -->
+    <!-- Add this before the game.js script -->
+    <script src="ores.js"></script>
     <script src="attacks.js"></script>
+    <script src="equipment.js"></script>
     <script src="game.js"></script>
 </body>
 </html> 
