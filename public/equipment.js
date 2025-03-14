@@ -638,17 +638,26 @@ class InventoryUI {
             // Change cursor style
             dragHandle.style.cursor = 'grabbing';
             
-            // Calculate the offset of the mouse pointer from the window's top-left corner
+            // Get current position and dimensions
             const rect = this.container.getBoundingClientRect();
+            
+            // Calculate the offset of the mouse pointer from the window's top-left corner
             offsetX = e.clientX - rect.left;
             offsetY = e.clientY - rect.top;
             
-            // Reset the centering transform if this is the first drag
-            if (this.container.style.transform.includes('translate(-50%, -50%)')) {
-                const rect = this.container.getBoundingClientRect();
-                this.container.style.left = (window.innerWidth / 2 - rect.width / 2) + 'px';
-                this.container.style.top = (window.innerHeight / 2 - rect.height / 2) + 'px';
+            // If the window is using transform for centering, convert to absolute positioning
+            // while maintaining the visual position
+            if (this.container.style.transform && this.container.style.transform.includes('translate(-50%, -50%)')) {
+                // Get the current position before changing transform
+                const currentLeft = rect.left;
+                const currentTop = rect.top;
+                
+                // Reset transform
                 this.container.style.transform = 'none';
+                
+                // Set absolute position to match previous visual position
+                this.container.style.left = `${currentLeft}px`;
+                this.container.style.top = `${currentTop}px`;
             }
             
             isDragging = true;
@@ -1337,10 +1346,26 @@ class BagWindowUI {
             // Change cursor style
             dragHandle.style.cursor = 'grabbing';
             
-            // Calculate the offset of the mouse pointer from the window's top-left corner
+            // Get current position and dimensions
             const rect = this.windowElement.getBoundingClientRect();
+            
+            // Calculate the offset of the mouse pointer from the window's top-left corner
             offsetX = e.clientX - rect.left;
             offsetY = e.clientY - rect.top;
+            
+            // If transform is applied, reset it while preserving visual position
+            if (this.windowElement.style.transform && this.windowElement.style.transform !== 'none') {
+                // Get the current position before changing transform
+                const currentLeft = rect.left;
+                const currentTop = rect.top;
+                
+                // Reset transform
+                this.windowElement.style.transform = 'none';
+                
+                // Set absolute position to match previous visual position
+                this.windowElement.style.left = `${currentLeft}px`;
+                this.windowElement.style.top = `${currentTop}px`;
+            }
             
             isDragging = true;
         });
@@ -3115,18 +3140,31 @@ class EquipmentUI {
             // Change cursor style
             dragHandle.style.cursor = 'grabbing';
             
-            // Calculate the offset of the mouse pointer from the window's top-left corner
+            // Get current computed position and dimensions
             const rect = this.equipmentPanel.getBoundingClientRect();
+            
+            // Calculate the offset of the mouse pointer from the window's top-left corner
             offsetX = e.clientX - rect.left;
             offsetY = e.clientY - rect.top;
             
-            // Reset transform to ensure proper positioning
-            this.equipmentPanel.style.transform = 'none';
-            
-            // Reset right position and set left position to ensure consistent dragging
-            if (window.getComputedStyle(this.equipmentPanel).right !== 'auto') {
-                const rect = this.equipmentPanel.getBoundingClientRect();
-                this.equipmentPanel.style.left = (window.innerWidth - rect.right) + 'px';
+            // Check if we need to convert from transform-based positioning
+            if (this.equipmentPanel.style.transform && this.equipmentPanel.style.transform !== 'none') {
+                // Get the current position before changing transform
+                const currentLeft = rect.left;
+                const currentTop = rect.top;
+                
+                // Reset transform to ensure proper positioning
+                this.equipmentPanel.style.transform = 'none';
+                
+                // Set absolute position to match previous visual position
+                this.equipmentPanel.style.left = `${currentLeft}px`;
+                this.equipmentPanel.style.top = `${currentTop}px`;
+                this.equipmentPanel.style.right = 'auto';
+            }
+            // Handle right-based positioning
+            else if (window.getComputedStyle(this.equipmentPanel).right !== 'auto') {
+                // Set left position based on current visual position
+                this.equipmentPanel.style.left = `${rect.left}px`;
                 this.equipmentPanel.style.right = 'auto';
             }
             
