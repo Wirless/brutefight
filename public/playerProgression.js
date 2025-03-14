@@ -28,6 +28,11 @@ class PlayerProgression {
             };
         }
         
+        // Initialize title if it doesn't exist
+        if (!this.player.title) {
+            this.player.title = 'Newcomer';
+        }
+        
         // Create UI elements
         this.createUI();
         
@@ -40,6 +45,32 @@ class PlayerProgression {
         }, 500);
     }
     
+    // Title definitions for different levels and achievements
+    static TITLES = {
+        LEVEL_BASED: {
+            1: 'Newcomer',
+            5: 'Adventurer',
+            10: 'Explorer',
+            15: 'Veteran',
+            20: 'Champion',
+            30: 'Master',
+            50: 'Grandmaster',
+            75: 'Legend',
+            100: 'Mythic Hero'
+        },
+        MINING: {
+            5: 'Miner',
+            10: 'Experienced Miner',
+            15: 'Master Miner',
+            20: 'Mining Expert'
+        },
+        SPECIAL: {
+            FIRST_CRAFTING: 'Apprentice Crafter',
+            INVENTORY_FULL: 'Hoarder',
+            HIGH_LEVEL_DIFFERENCE: 'Mentor'
+        }
+    };
+    
     // Calculate max experience needed for level
     calculateMaxExperience(level) {
         return 100 * level;
@@ -48,6 +79,56 @@ class PlayerProgression {
     // Calculate capacity based on level
     calculateCapacity(level) {
         return 100 + (level - 1) * 10;
+    }
+    
+    // Get the title for the current level
+    getLevelTitle() {
+        // Find the highest level title that's less than or equal to player's level
+        const levelTitles = PlayerProgression.TITLES.LEVEL_BASED;
+        const playerLevel = this.player.level;
+        
+        // Find the highest qualifying level
+        const qualifyingLevels = Object.keys(levelTitles)
+            .map(Number)
+            .filter(level => level <= playerLevel)
+            .sort((a, b) => b - a);
+        
+        if (qualifyingLevels.length > 0) {
+            return levelTitles[qualifyingLevels[0]];
+        }
+        
+        // Default title if no qualifying level found
+        return 'Newcomer';
+    }
+    
+    // Check and update player title based on level and achievements
+    updateTitle() {
+        // Get level-based title
+        const newTitle = this.getLevelTitle();
+        
+        // Update player title if it changed
+        if (newTitle !== this.player.title) {
+            const oldTitle = this.player.title;
+            this.player.title = newTitle;
+            
+            // Announce title change
+            if (window.addChatMessage) {
+                window.addChatMessage({
+                    type: 'system',
+                    message: `You have earned a new title: ${newTitle}!`
+                });
+            }
+            
+            // Send title update to server
+            this.sendUpdateToServer();
+            
+            return {
+                oldTitle,
+                newTitle
+            };
+        }
+        
+        return null;
     }
     
     // Calculate total weight of all items in inventory and bags
@@ -167,6 +248,9 @@ class PlayerProgression {
         // Increase capacity
         this.player.capacity = this.calculateCapacity(this.player.level);
         
+        // Check for title update
+        this.updateTitle();
+        
         // Show level up message
         this.showLevelUpMessage();
         
@@ -184,6 +268,7 @@ class PlayerProgression {
                 maxExperience: this.player.maxExperience,
                 capacity: this.player.capacity,
                 resources: this.player.resources,
+                title: this.player.title, // Include title in updates
                 // Include inventory and equipped items if they exist
                 inventory: window.playerInventory ? window.playerInventory.items : undefined,
                 equipped: window.equipmentManager ? window.equipmentManager.equipped : undefined
@@ -457,6 +542,13 @@ class PlayerProgression {
         const message = document.createElement('div');
         message.className = 'level-up-message';
         message.textContent = `LEVEL UP! You are now level ${this.player.level}`;
+        
+        // Add title if it changed
+        const titleChange = this.updateTitle();
+        if (titleChange) {
+            message.innerHTML = `LEVEL UP! You are now level ${this.player.level}<br>New Title: <span style="color: gold">${titleChange.newTitle}</span>`;
+        }
+        
         message.style.position = 'absolute';
         message.style.top = '50%';
         message.style.left = '50%';
@@ -497,6 +589,14 @@ class PlayerProgression {
                 type: 'system',
                 message: `Congratulations! You have reached level ${this.player.level}.`
             });
+            
+            // Also announce title if it changed
+            if (titleChange) {
+                window.addChatMessage({
+                    type: 'system',
+                    message: `You have earned a new title: ${titleChange.newTitle}!`
+                });
+            }
         }
     }
     

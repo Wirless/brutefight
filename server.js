@@ -3,6 +3,8 @@ const http = require('http');
 const socketIO = require('socket.io');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const saltRounds = 10;
 
 // Rate limiting for player updates
 const playerUpdateRateLimits = new Map();
@@ -69,6 +71,23 @@ app.use((req, res, next) => {
 
 // Add middleware to parse JSON requests
 app.use(express.json());
+
+// Load accounts data
+let accounts = {};
+try {
+  if (fs.existsSync('accounts.json')) {
+    const accountsData = fs.readFileSync('accounts.json', 'utf8');
+    accounts = JSON.parse(accountsData);
+    console.log('Loaded accounts data from accounts.json');
+  } else {
+    console.log('No accounts.json found, using empty accounts data');
+    // Create default accounts file
+    fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+    console.log('Created default accounts.json');
+  }
+} catch (err) {
+  console.error('Error loading accounts data:', err);
+}
 
 // Route to handle synchronous player data saves
 app.post('/save-player-data', (req, res) => {
@@ -232,9 +251,52 @@ io.on('connection', (socket) => {
   console.log('New player connected:', socket.id);
 
   // Handle player login
-  socket.on('login', (data) => {
-    const { username, localSave } = data;
+  socket.on('login', async (data) => {
+    const { username, password, localSave, token } = data;
     console.log(`Player ${username} attempting to login`);
+    
+    // Check if the account exists and verify credentials
+    let isAuthenticated = false;
+    let playerTitle = 'Newcomer'; // Default title
+    
+    if (accounts[username]) {
+      // Check if token is provided (for reconnects)
+      if (token && token.startsWith(username + '_')) {
+        isAuthenticated = true;
+      } 
+      // If password is provided, verify it
+      else if (password) {
+        try {
+          const match = await bcrypt.compare(password, accounts[username].password);
+          isAuthenticated = match;
+        } catch (error) {
+          console.error('Error verifying password:', error);
+        }
+      }
+      
+      if (isAuthenticated) {
+        // Update last login
+        accounts[username].lastLogin = Date.now();
+        fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+        
+        // Get player title
+        playerTitle = accounts[username].title || 'Newcomer';
+      } else {
+        socket.emit('loginFailed', { message: 'Invalid credentials' });
+        return;
+      }
+    } else if (config.game && config.game.allowAnonymousLogins) {
+      // Allow login without account if configured to allow anonymous logins
+      isAuthenticated = true;
+    } else {
+      socket.emit('loginFailed', { message: 'Account does not exist' });
+      return;
+    }
+    
+    if (!isAuthenticated) {
+      socket.emit('loginFailed', { message: 'Authentication failed' });
+      return;
+    }
     
     let cloudSaveForced = false;
     
@@ -267,6 +329,8 @@ io.on('connection', (socket) => {
           strength: 1,
           luck: 1,
           speed: (config.players && config.players.defaultSpeed) || 5,
+          // Add title and account info
+          title: playerTitle,
           // Add progression fields
           level: 1,
           experience: 0,
@@ -287,6 +351,9 @@ io.on('connection', (socket) => {
         console.log(`Created new player ${username}`);
       }
     }
+    
+    // Add or update title
+    players[username].title = playerTitle;
     
     // Mark player as active
     activePlayers.add(username);
@@ -466,6 +533,18 @@ io.on('connection', (socket) => {
       if (data.capacity !== undefined) currentPlayer.capacity = data.capacity;
       if (data.resources !== undefined) currentPlayer.resources = data.resources;
       if (data.skills !== undefined) currentPlayer.skills = data.skills;
+      if (data.title !== undefined) currentPlayer.title = data.title;
+      
+      // If account info exists, update title in accounts data too
+      if (data.title !== undefined && accounts[socket.username]) {
+        accounts[socket.username].title = data.title;
+        try {
+          fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+          console.log(`Updated title for ${socket.username}: ${data.title}`);
+        } catch (err) {
+          console.error(`Error updating title in accounts: ${err}`);
+        }
+      }
       
       // IMPORTANT: Save inventory if it exists
       if (data.inventory) {
@@ -488,7 +567,35 @@ io.on('connection', (socket) => {
       if (data.skills && data.skills.mining) {
         console.log(`Mining skill: Level ${data.skills.mining.level}, XP: ${data.skills.mining.experience}/${data.skills.mining.maxExperience}`);
       }
+      
+      // Notify all clients about the update if the level or title changed
+      if (data.level !== undefined || data.title !== undefined) {
+        // Send updated player list that includes titles and levels
+        io.emit('playerList', getVisiblePlayers());
+        
+        // Update leaderboard for all clients
+        io.emit('leaderboardData', [...activePlayers].map(playerName => ({
+          username: playerName,
+          level: players[playerName].level,
+          experience: players[playerName].experience,
+          title: players[playerName].title || 'Newcomer'
+        })).sort((a, b) => b.level - a.level || b.experience - a.experience));
+      }
     }
+  });
+
+  // Handle player request for leaderboard data
+  socket.on('requestLeaderboard', () => {
+    // Create sorted list of active players by level
+    const leaderboardPlayers = [...activePlayers].map(username => ({
+      username,
+      level: players[username].level,
+      experience: players[username].experience,
+      title: players[username].title || 'Newcomer'
+    })).sort((a, b) => b.level - a.level || b.experience - a.experience);
+    
+    // Send leaderboard data back to the client
+    socket.emit('leaderboardData', leaderboardPlayers);
   });
 });
 
@@ -502,10 +609,87 @@ function getRandomColor() {
   return color;
 }
 
+// Add routes for account management
+app.post('/register', async (req, res) => {
+  const { username, password, email } = req.body;
+  
+  // Basic validation
+  if (!username || !password || !email) {
+    return res.status(400).json({ success: false, message: 'Missing username, password, or email' });
+  }
+  
+  // Check if username already exists
+  if (accounts[username]) {
+    return res.status(400).json({ success: false, message: 'Username already exists' });
+  }
+  
+  try {
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    
+    // Create new account
+    accounts[username] = {
+      username,
+      password: hashedPassword,
+      email,
+      created: Date.now(),
+      lastLogin: null,
+      title: 'Newcomer' // Default title
+    };
+    
+    // Save accounts data
+    fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+    
+    return res.json({ success: true, message: 'Account created successfully' });
+  } catch (error) {
+    console.error('Error creating account:', error);
+    return res.status(500).json({ success: false, message: 'Error creating account' });
+  }
+});
+
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body;
+  
+  // Basic validation
+  if (!username || !password) {
+    return res.status(400).json({ success: false, message: 'Missing username or password' });
+  }
+  
+  // Check if username exists
+  if (!accounts[username]) {
+    return res.status(401).json({ success: false, message: 'Invalid username or password' });
+  }
+  
+  try {
+    // Compare password
+    const match = await bcrypt.compare(password, accounts[username].password);
+    
+    if (match) {
+      // Update last login
+      accounts[username].lastLogin = Date.now();
+      fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+      
+      // Generate auth token (in a real app, use a more secure method)
+      const token = username + '_' + Date.now();
+      
+      return res.json({ 
+        success: true, 
+        message: 'Login successful',
+        token
+      });
+    } else {
+      return res.status(401).json({ success: false, message: 'Invalid username or password' });
+    }
+  } catch (error) {
+    console.error('Error logging in:', error);
+    return res.status(500).json({ success: false, message: 'Error logging in' });
+  }
+});
+
 // Start the server
 const PORT = 800;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Open your browser and go to http://localhost:${PORT} or http://127.0.0.1:${PORT}`);
   console.log(`Show offline players: ${config.features.showOfflinePlayers ? 'Enabled' : 'Disabled'}`);
-}); 
+});

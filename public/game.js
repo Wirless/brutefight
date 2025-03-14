@@ -109,6 +109,29 @@ window.selectedTool = null;
 let expOrbManager = null;
 let skillsManager = null;
 
+// Add to the global variables section
+let leaderboardPanel = null;
+let auth = {
+    token: null,
+    isLoggedIn: false
+};
+
+// Try to load auth token from localStorage
+try {
+    const savedAuth = localStorage.getItem('authToken');
+    if (savedAuth) {
+        auth.token = savedAuth;
+    }
+} catch (err) {
+    console.error('Error loading auth token:', err);
+}
+
+// Add to the DOM elements section
+const registerPanel = document.createElement('div');
+registerPanel.id = 'registerPanel';
+registerPanel.className = 'login-panel';
+registerPanel.style.display = 'none';
+
 // Generate grass patterns (pre-rendered grass patterns for performance)
 function generateGrassPatterns() {
     for (let i = 0; i < 5; i++) {
@@ -387,10 +410,9 @@ window.addEventListener('keydown', function(e) {
         });
     }
     
-    // Toggle equipment panel with 'E' key - removed since equipment is always visible
+    // Toggle equipment panel with 'E' key -still kept. u can close equipment window.
+    // Just bring focus back to the game
     if (key === 'e' && !isChatFocused) {
-        // No longer toggles the equipment panel
-        // Just bring focus back to the game
         if (window.equipmentManager) {
             window.equipmentManager.toggleEquipmentPanel();
         }
@@ -469,12 +491,21 @@ function updateVelocity() {
 // Handle login
 function login() {
     username = usernameInput.value.trim();
+    const passwordInput = document.getElementById('passwordInput') || { value: '' };
+    const password = passwordInput.value;
+    
     if (username) {
         // Show loading message
         loginStatus.textContent = "Logging in...";
         
-        // Send username and local save data for verification
-        socket.emit('login', { username, localSave });
+        // Check if we have an auth token
+        if (auth.token && auth.token.startsWith(username + '_')) {
+            // Send username and token for reconnection
+            socket.emit('login', { username, token: auth.token, localSave });
+        } else {
+            // Send username, password, and local save data for verification
+            socket.emit('login', { username, password, localSave });
+        }
     } else {
         loginStatus.textContent = "Please enter a username.";
     }
@@ -576,6 +607,13 @@ window.addEventListener('beforeunload', function() {
 socket.on('loginSuccess', (data) => {
     console.log('Login successful:', data);
     
+    // Store auth token if provided
+    if (data.token) {
+        auth.token = data.token;
+        auth.isLoggedIn = true;
+        localStorage.setItem('authToken', data.token);
+    }
+    
     // Hide login panel and show game panel
     loginPanel.style.display = 'none';
     gamePanel.style.display = 'block';
@@ -588,6 +626,9 @@ socket.on('loginSuccess', (data) => {
     
     // Update debug info
     updateDebugInfo();
+    
+    // Request leaderboard data
+    socket.emit('requestLeaderboard');
 });
 
 socket.on('playerList', (playersData) => {
@@ -710,6 +751,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Preload sprites
     preloadSprites();
+    
+    // Create register panel
+    createRegisterPanel();
+    
+    // Create leaderboard panel
+    createLeaderboardPanel();
 });
 
 // Check for ore collisions
@@ -891,7 +938,7 @@ function drawFloor() {
 }
 
 // Draw a player on the canvas
-function drawPlayer(x, y, color, name, isCurrentPlayer) {
+function drawPlayer(x, y, color, name, isCurrentPlayer, level, title) {
     // Convert world coordinates to screen coordinates
     const screenX = x - Math.floor(cameraX);
     const screenY = y - Math.floor(cameraY);
@@ -912,25 +959,41 @@ function drawPlayer(x, y, color, name, isCurrentPlayer) {
     ctx.lineWidth = isCurrentPlayer ? 3 : 1;
     ctx.strokeRect(screenX - playerSize/2, screenY - playerSize/2, playerSize, playerSize);
     
-    // Draw player name
+    // Draw player title if available
+    if (title) {
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgb(0, 233, 150)';
+        
+        // Create an outline effect for the title
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.strokeText(title, screenX, screenY - 40);
+        ctx.fillText(title, screenX, screenY - 40);
+    }
+    
+    // Draw player name with level
     ctx.font = '14px Arial';
     ctx.textAlign = 'center';
-    ctx.fillStyle = isCurrentPlayer ? 'white' : 'black';
+    ctx.fillStyle = isCurrentPlayer ? 'white' : '#EEE';
+    
+    // Format name with level
+    const displayName = level ? `[${level}] ${name}` : name;
     
     // Create an outline effect for the name
     ctx.strokeStyle = 'black';
     ctx.lineWidth = 3;
-    ctx.strokeText(name, screenX, screenY - 25);
-    ctx.fillText(name, screenX, screenY - 25);
+    ctx.strokeText(displayName, screenX, screenY - 20);
+    ctx.fillText(displayName, screenX, screenY - 20);
     
     // Draw indicator for current player
     if (isCurrentPlayer) {
         ctx.font = '12px Arial';
         ctx.strokeStyle = 'black';
         ctx.lineWidth = 2;
-        ctx.strokeText('(You)', screenX, screenY - 10);
+        ctx.strokeText('(You)', screenX, screenY - 5);
         ctx.fillStyle = 'white';
-        ctx.fillText('(You)', screenX, screenY - 10);
+        ctx.fillText('(You)', screenX, screenY - 5);
     }
 }
 
@@ -1077,22 +1140,7 @@ function startGameLoop() {
         }
         
         // Draw all players
-        for (const playerName in players) {
-            const player = players[playerName];
-            const isCurrentPlayer = playerName === username;
-            
-            // For the current player, use the local position for smoother movement
-            const drawX = isCurrentPlayer ? myPlayer.x : player.x;
-            const drawY = isCurrentPlayer ? myPlayer.y : player.y;
-            
-            drawPlayer(
-                drawX,
-                drawY,
-                player.color,
-                playerName,
-                isCurrentPlayer
-            );
-        }
+        drawAllPlayers();
         
         // Draw attack effect
         drawAttackEffect();
@@ -1205,10 +1253,21 @@ function preloadSounds() {
     // Create sounds directory if it doesn't exist
     console.log('Preloading sounds...');
     
-    // Check if sounds directory exists, if not, show a warning
-    const hitSound = new Audio('sounds/hit.mp3');
-    hitSound.addEventListener('error', () => {
-        console.warn('Sound file "sounds/hit.mp3" not found. Please create a sounds directory and add hit.mp3.');
+    // Create an array of sound files to preload
+    const soundFiles = [
+        'sounds/hit.mp3',
+        'sounds/hit2.mp3'
+    ];
+    
+    // Preload each sound file
+    soundFiles.forEach(soundPath => {
+        const sound = new Audio(soundPath);
+        sound.addEventListener('error', () => {
+            console.warn(`Sound file "${soundPath}" not found. Please ensure the sounds directory exists and contains this file.`);
+        });
+        sound.addEventListener('canplaythrough', () => {
+            console.log(`Successfully preloaded: ${soundPath}`);
+        });
     });
 }
 
@@ -1434,4 +1493,350 @@ function initGame() {
         type: 'system',
         message: `Welcome to the game, ${username}! Use WASD to move and SPACE to attack.`
     });
-} 
+}
+
+// Update the existing login panel in initGame to include password field
+function modifyLoginPanel() {
+    // Check if login panel exists and doesn't have password field yet
+    if (loginPanel && !document.getElementById('passwordInput')) {
+        // Create password field
+        const passwordGroup = document.createElement('div');
+        passwordGroup.className = 'form-group';
+        passwordGroup.innerHTML = `
+            <label for="passwordInput">Password:</label>
+            <input type="password" id="passwordInput" placeholder="Enter your password">
+        `;
+        
+        // Insert password field after username
+        const usernameGroup = document.querySelector('#loginPanel .form-group');
+        if (usernameGroup) {
+            usernameGroup.parentNode.insertBefore(passwordGroup, usernameGroup.nextSibling);
+        }
+    }
+}
+
+// Call this function early
+document.addEventListener('DOMContentLoaded', modifyLoginPanel);
+
+// Add this function to create the register panel
+function createRegisterPanel() {
+    // Create register panel container
+    registerPanel.innerHTML = `
+        <h2>Create Account</h2>
+        <div class="form-group">
+            <label for="regUsernameInput">Username:</label>
+            <input type="text" id="regUsernameInput" placeholder="Choose a username">
+        </div>
+        <div class="form-group">
+            <label for="regEmailInput">Email:</label>
+            <input type="email" id="regEmailInput" placeholder="Enter your email">
+        </div>
+        <div class="form-group">
+            <label for="regPasswordInput">Password:</label>
+            <input type="password" id="regPasswordInput" placeholder="Choose a password">
+        </div>
+        <div class="form-group">
+            <label for="regConfirmPasswordInput">Confirm Password:</label>
+            <input type="password" id="regConfirmPasswordInput" placeholder="Confirm your password">
+        </div>
+        <div class="button-group">
+            <button id="registerButton">Register</button>
+            <button id="backToLoginButton">Back to Login</button>
+        </div>
+        <div id="registerStatus" class="status-message"></div>
+    `;
+    
+    // Add register panel to body
+    document.body.appendChild(registerPanel);
+    
+    // Add event listeners
+    document.getElementById('registerButton').addEventListener('click', register);
+    document.getElementById('backToLoginButton').addEventListener('click', () => {
+        registerPanel.style.display = 'none';
+        loginPanel.style.display = 'block';
+    });
+    
+    // Add "Register" link to login panel
+    const createAccountLink = document.createElement('div');
+    createAccountLink.className = 'create-account-link';
+    createAccountLink.innerHTML = '<a href="#" id="createAccountLink">Create an Account</a>';
+    loginPanel.appendChild(createAccountLink);
+    
+    document.getElementById('createAccountLink').addEventListener('click', (e) => {
+        e.preventDefault();
+        loginPanel.style.display = 'none';
+        registerPanel.style.display = 'block';
+    });
+}
+
+// Add this function to create the leaderboard panel
+function createLeaderboardPanel() {
+    // Create leaderboard container
+    leaderboardPanel = document.createElement('div');
+    leaderboardPanel.id = 'leaderboardPanel';
+    leaderboardPanel.className = 'leaderboard-panel';
+    leaderboardPanel.style.position = 'fixed';
+    leaderboardPanel.style.top = '100px';
+    leaderboardPanel.style.left = '10px';
+    leaderboardPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    leaderboardPanel.style.color = 'white';
+    leaderboardPanel.style.padding = '10px';
+    leaderboardPanel.style.borderRadius = '5px';
+    leaderboardPanel.style.border = '1px solid rgb(0, 233, 150)';
+    leaderboardPanel.style.width = '200px';
+    leaderboardPanel.style.zIndex = '998';
+    leaderboardPanel.style.display = 'none'; // Initially hidden
+    
+    // Create leaderboard header
+    const leaderboardHeader = document.createElement('div');
+    leaderboardHeader.className = 'leaderboard-header';
+    leaderboardHeader.textContent = 'Top Players';
+    leaderboardHeader.style.fontWeight = 'bold';
+    leaderboardHeader.style.textAlign = 'center';
+    leaderboardHeader.style.marginBottom = '10px';
+    leaderboardHeader.style.borderBottom = '1px solid rgb(0, 233, 150)';
+    leaderboardHeader.style.paddingBottom = '5px';
+    
+    // Create leaderboard list
+    const leaderboardList = document.createElement('ul');
+    leaderboardList.id = 'leaderboardList';
+    leaderboardList.className = 'leaderboard-list';
+    leaderboardList.style.listStyle = 'none';
+    leaderboardList.style.padding = '0';
+    leaderboardList.style.margin = '0';
+    leaderboardList.style.maxHeight = '300px';
+    leaderboardList.style.overflowY = 'auto';
+    
+    // Assemble leaderboard
+    leaderboardPanel.appendChild(leaderboardHeader);
+    leaderboardPanel.appendChild(leaderboardList);
+    
+    // Add to game panel
+    document.getElementById('gamePanel').appendChild(leaderboardPanel);
+}
+
+// Add this function to handle registering new accounts
+function register() {
+    const username = document.getElementById('regUsernameInput').value.trim();
+    const email = document.getElementById('regEmailInput').value.trim();
+    const password = document.getElementById('regPasswordInput').value;
+    const confirmPassword = document.getElementById('regConfirmPasswordInput').value;
+    const registerStatus = document.getElementById('registerStatus');
+    
+    // Basic validation
+    if (!username || !email || !password || !confirmPassword) {
+        registerStatus.textContent = 'All fields are required.';
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        registerStatus.textContent = 'Passwords do not match.';
+        return;
+    }
+    
+    // Show loading message
+    registerStatus.textContent = 'Creating account...';
+    
+    // Send registration request
+    fetch('/register', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, email, password })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Registration successful
+            registerStatus.textContent = 'Account created! You can now login.';
+            
+            // Auto-fill login
+            document.getElementById('usernameInput').value = username;
+            
+            // Go back to login after a delay
+            setTimeout(() => {
+                registerPanel.style.display = 'none';
+                loginPanel.style.display = 'block';
+            }, 2000);
+        } else {
+            // Registration failed
+            registerStatus.textContent = data.message || 'Registration failed.';
+        }
+    })
+    .catch(error => {
+        console.error('Error registering:', error);
+        registerStatus.textContent = 'Error registering account.';
+    });
+}
+
+// Update the existing login function to handle passwords
+function login() {
+    username = usernameInput.value.trim();
+    const passwordInput = document.getElementById('passwordInput') || { value: '' };
+    const password = passwordInput.value;
+    
+    if (username) {
+        // Show loading message
+        loginStatus.textContent = "Logging in...";
+        
+        // Check if we have an auth token
+        if (auth.token && auth.token.startsWith(username + '_')) {
+            // Send username and token for reconnection
+            socket.emit('login', { username, token: auth.token, localSave });
+        } else {
+            // Send username, password, and local save data for verification
+            socket.emit('login', { username, password, localSave });
+        }
+    } else {
+        loginStatus.textContent = "Please enter a username.";
+    }
+}
+
+// Update player drawing to include level
+function drawPlayer(x, y, color, name, isCurrentPlayer, level, title) {
+    // Convert world coordinates to screen coordinates
+    const screenX = x - Math.floor(cameraX);
+    const screenY = y - Math.floor(cameraY);
+    
+    // Only draw if player is visible on screen (with some buffer)
+    const playerSize = 32;
+    if (screenX < -playerSize || screenX > canvas.width + playerSize || 
+        screenY < -playerSize || screenY > canvas.height + playerSize) {
+        return;
+    }
+    
+    // Draw player square
+    ctx.fillStyle = isCurrentPlayer ? 'red' : color;
+    ctx.fillRect(screenX - playerSize/2, screenY - playerSize/2, playerSize, playerSize);
+    
+    // Draw player border
+    ctx.strokeStyle = isCurrentPlayer ? '#000' : '#555';
+    ctx.lineWidth = isCurrentPlayer ? 3 : 1;
+    ctx.strokeRect(screenX - playerSize/2, screenY - playerSize/2, playerSize, playerSize);
+    
+    // Draw player title if available
+    if (title) {
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgb(0, 233, 150)';
+        
+        // Create an outline effect for the title
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.strokeText(title, screenX, screenY - 40);
+        ctx.fillText(title, screenX, screenY - 40);
+    }
+    
+    // Draw player name with level
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = isCurrentPlayer ? 'white' : '#EEE';
+    
+    // Format name with level
+    const displayName = level ? `[${level}] ${name}` : name;
+    
+    // Create an outline effect for the name
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 3;
+    ctx.strokeText(displayName, screenX, screenY - 20);
+    ctx.fillText(displayName, screenX, screenY - 20);
+    
+    // Draw indicator for current player
+    if (isCurrentPlayer) {
+        ctx.font = '12px Arial';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 2;
+        ctx.strokeText('(You)', screenX, screenY - 5);
+        ctx.fillStyle = 'white';
+        ctx.fillText('(You)', screenX, screenY - 5);
+    }
+}
+
+// Update the drawAllPlayers function in game loop
+function drawAllPlayers() {
+    for (const playerName in players) {
+        const player = players[playerName];
+        const isCurrentPlayer = playerName === username;
+        
+        // For the current player, use the local position for smoother movement
+        const drawX = isCurrentPlayer ? myPlayer.x : player.x;
+        const drawY = isCurrentPlayer ? myPlayer.y : player.y;
+        
+        drawPlayer(
+            drawX,
+            drawY,
+            player.color,
+            playerName,
+            isCurrentPlayer,
+            player.level,
+            player.title
+        );
+    }
+}
+
+// Update gameLoop to use the new drawAllPlayers function
+// In your gameLoop, replace the existing player drawing code with:
+// drawAllPlayers();
+
+// Add this function to update the leaderboard
+function updateLeaderboard(leaderboardData) {
+    const leaderboardList = document.getElementById('leaderboardList');
+    if (!leaderboardList) return;
+    
+    // Clear existing list
+    leaderboardList.innerHTML = '';
+    
+    // Add each player to the list
+    leaderboardData.forEach((player, index) => {
+        const listItem = document.createElement('li');
+        listItem.className = 'leaderboard-item';
+        listItem.style.padding = '5px 10px';
+        listItem.style.marginBottom = '5px';
+        listItem.style.borderRadius = '3px';
+        
+        // Highlight current player
+        if (player.username === username) {
+            listItem.style.backgroundColor = 'rgba(255, 100, 100, 0.3)';
+            listItem.style.border = '1px solid red';
+        } else {
+            listItem.style.backgroundColor = 'rgba(0, 233, 150, 0.1)';
+            listItem.style.border = '1px solid rgba(0, 233, 150, 0.3)';
+        }
+        
+        // Create rank badge
+        const rankBadge = document.createElement('span');
+        rankBadge.className = 'rank-badge';
+        rankBadge.textContent = `#${index + 1}`;
+        rankBadge.style.marginRight = '8px';
+        rankBadge.style.fontWeight = 'bold';
+        rankBadge.style.color = index === 0 ? 'gold' : (index === 1 ? 'silver' : (index === 2 ? '#cd7f32' : 'white'));
+        
+        // Create player info
+        const playerInfo = document.createElement('span');
+        playerInfo.className = 'player-info';
+        playerInfo.innerHTML = `<strong>[${player.level}] ${player.username}</strong>`;
+        
+        // If player has a title, add it
+        if (player.title && player.title !== 'Newcomer') {
+            playerInfo.innerHTML += `<br><small>${player.title}</small>`;
+        }
+        
+        // Assemble list item
+        listItem.appendChild(rankBadge);
+        listItem.appendChild(playerInfo);
+        leaderboardList.appendChild(listItem);
+    });
+    
+    // Show leaderboard
+    leaderboardPanel.style.display = 'block';
+}
+
+// Add this to socket event handlers
+socket.on('leaderboardData', (data) => {
+    updateLeaderboard(data);
+});
+
+socket.on('loginFailed', (data) => {
+    loginStatus.textContent = data.message || 'Login failed.';
+}); 

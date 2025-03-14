@@ -18,6 +18,7 @@
     "maxConnectionsPerIP": 5
   },
   "comments": {
-    "showOfflinePlayers": "false"
+    "showOfflinePlayers": false,
+    "allowAnonymousLogins": false
   }
 } 
