@@ -1,5 +1,5 @@
 // Connect to the WebSocket server
-const socket = io.connect(window.location.hostname === 'localhost' ? 'http://localhost' : 'http://127.0.0.1');
+const socket = io.connect(window.location.origin);
 
 // Make socket globally available
 window.socket = socket;
@@ -1194,7 +1194,7 @@ function drawParticles() {
 }
 
 // Make ores accessible to the attack system
-window.ores = ores;
+window.ores = oreManager ? oreManager.getOres() : [];
 window.rockParticles = rockParticles;
 window.hitRocks = hitRocks;
 window.rockHitTimes = rockHitTimes;
@@ -1393,7 +1393,12 @@ function initGame() {
         // Load equipped items if they exist
         if (myPlayer.equipped) {
             equipmentManager.equipped = myPlayer.equipped;
-            equipmentManager.updateEquipmentDisplay();
+            // Update UI after setting equipped items
+            if (equipmentManager.ui && equipmentManager.ui.updateAllSlots) {
+                equipmentManager.ui.updateAllSlots();
+            } else {
+                console.warn("Could not update equipment display - ui method not found");
+            }
         }
         
         // Synchronize resources with inventory after loading

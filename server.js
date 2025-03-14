@@ -38,11 +38,24 @@ const server = http.createServer(app);
 // Configure Socket.io with CORS settings
 const io = socketIO(server, {
   cors: {
-    origin: ["http://localhost:80", "http://127.0.0.1:80", "http://localhost", "http://127.0.0.1"],
+    origin: "*",
     methods: ["GET", "POST"],
     credentials: true
   }
 });
+//Admin panel
+//Login with password thats set in config.json for admin account
+/* 
+app.post('/admin/login', (req, res) => {
+  const { username, password } = req.body;
+  if (username === config.admin.username && password === config.admin.password) {
+    res.json({ success: true, message: 'Login successful' });
+  } else {  
+    res.json({ success: false, message: 'Login failed' });
+  }
+});
+*/
+
 
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
@@ -237,8 +250,8 @@ io.on('connection', (socket) => {
       } else {
         // New player, create with default values
         players[username] = {
-          x: config.players?.spawnX || 5000, // Use config or default to 5000
-          y: config.players?.spawnY || 5000, // Use config or default to 5000
+          x: (config.players && config.players.spawnX) || 0,
+          y: (config.players && config.players.spawnY) || 0,
           color: getRandomColor(),
           hp: 100,
           maxhp: 100,
@@ -253,7 +266,7 @@ io.on('connection', (socket) => {
           dexterity: 1,
           strength: 1,
           luck: 1,
-          speed: config.players?.defaultSpeed || 5,
+          speed: (config.players && config.players.defaultSpeed) || 5,
           // Add progression fields
           level: 1,
           experience: 0,
@@ -490,7 +503,7 @@ function getRandomColor() {
 }
 
 // Start the server
-const PORT = process.env.PORT || config.game?.port || 80;
+const PORT = 800;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Open your browser and go to http://localhost:${PORT} or http://127.0.0.1:${PORT}`);
