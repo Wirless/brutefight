@@ -114,6 +114,9 @@ class InventoryUI {
         this.isDragging = false;
         
         this.createUI();
+        
+        // Restore saved position if available
+        this.restoreWindowPosition();
     }
     
     createUI() {
@@ -128,11 +131,27 @@ class InventoryUI {
         this.container.style.border = '2px solid rgb(0, 233, 150)';
         this.container.style.borderRadius = '8px';
         this.container.style.padding = '15px';
-        this.container.style.display = 'flex';
         this.container.style.flexDirection = 'column';
         this.container.style.gap = '10px';
         this.container.style.zIndex = '1000';
         this.container.style.display = 'none';
+        this.container.style.boxShadow = '0 0 15px rgba(0, 233, 150, 0.3)';
+        this.container.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        
+        // Add header with drag handle
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.justifyContent = 'space-between';
+        header.style.alignItems = 'center';
+        header.style.marginBottom = '10px';
+        header.style.cursor = 'grab'; // Show grab cursor to indicate draggable
+        
+        // Add drag handle icon
+        const dragIcon = document.createElement('div');
+        dragIcon.innerHTML = '&#8801;'; // Triple bar icon
+        dragIcon.style.marginRight = '10px';
+        dragIcon.style.fontSize = '18px';
+        dragIcon.style.color = 'rgba(0, 233, 150, 0.7)';
         
         // Add title
         const title = document.createElement('div');
@@ -140,9 +159,35 @@ class InventoryUI {
         title.style.color = 'white';
         title.style.fontSize = '18px';
         title.style.fontWeight = 'bold';
-        title.style.marginBottom = '10px';
-        title.style.textAlign = 'center';
-        this.container.appendChild(title);
+        
+        // Add drag handle and title to a container
+        const titleContainer = document.createElement('div');
+        titleContainer.style.display = 'flex';
+        titleContainer.style.alignItems = 'center';
+        titleContainer.appendChild(dragIcon);
+        titleContainer.appendChild(title);
+        header.appendChild(titleContainer);
+        
+        // Add close button
+        const closeButton = document.createElement('span');
+        closeButton.textContent = '×';
+        closeButton.style.cursor = 'pointer';
+        closeButton.style.fontSize = '24px';
+        closeButton.style.fontWeight = 'bold';
+        closeButton.style.color = 'rgb(0, 233, 150)';
+        closeButton.style.transition = 'all 0.2s ease';
+        closeButton.addEventListener('mouseover', () => {
+            closeButton.style.transform = 'scale(1.2)';
+            closeButton.style.textShadow = '0 0 8px rgba(0, 233, 150, 0.8)';
+        });
+        closeButton.addEventListener('mouseout', () => {
+            closeButton.style.transform = 'scale(1)';
+            closeButton.style.textShadow = 'none';
+        });
+        closeButton.addEventListener('click', () => this.toggle());
+        header.appendChild(closeButton);
+        
+        this.container.appendChild(header);
         
         // Create grid for inventory slots
         const slotsGrid = document.createElement('div');
@@ -284,23 +329,6 @@ class InventoryUI {
         
         this.container.appendChild(slotsGrid);
         
-        // Add close button
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Close';
-        closeButton.style.marginTop = '10px';
-        closeButton.style.backgroundColor = '#444';
-        closeButton.style.color = 'white';
-        closeButton.style.border = 'none';
-        closeButton.style.padding = '5px 10px';
-        closeButton.style.borderRadius = '4px';
-        closeButton.style.cursor = 'pointer';
-        
-        closeButton.addEventListener('click', () => {
-            this.toggle();
-        });
-        
-        this.container.appendChild(closeButton);
-        
         // Add to document
         document.body.appendChild(this.container);
         
@@ -308,6 +336,9 @@ class InventoryUI {
         for (let i = 0; i < this.inventory.size; i++) {
             this.updateSlot(i);
         }
+        
+        // Make the inventory container draggable
+        this.makeDraggable(header);
     }
     
     updateSlot(slotIndex) {
@@ -520,8 +551,180 @@ class InventoryUI {
     }
     
     toggle() {
+        if (!this.isVisible) {
+            // Show window with animation
+            this.container.style.display = 'flex';
+            this.container.style.opacity = '0';
+            this.container.style.transform = 'translate(-50%, -50%) scale(0.9)';
+            
+            // Trigger animation after a small delay (needed for the transition to work)
+            setTimeout(() => {
+                this.container.style.opacity = '1';
+                this.container.style.transform = 'translate(-50%, -50%) scale(1)';
+            }, 10);
+            
+            // Add a pulsing glow effect to the border
+            this.addPulseEffect();
+        } else {
+            // Hide window with fade out
+            this.container.style.opacity = '0';
+            this.container.style.transform = 'translate(-50%, -50%) scale(0.9)';
+            
+            // Remove the window after animation completes
+            setTimeout(() => {
+                this.container.style.display = 'none';
+                // Reset transform for next time
+                this.container.style.transform = 'translate(-50%, -50%) scale(1)';
+                // Remove pulse effect
+                this.removePulseEffect();
+            }, 300);
+        }
+        
         this.isVisible = !this.isVisible;
-        this.container.style.display = this.isVisible ? 'flex' : 'none';
+    }
+    
+    // Save window position to localStorage
+    saveWindowPosition() {
+        if (!this.container) return;
+        
+        const position = {
+            left: this.container.style.left,
+            top: this.container.style.top,
+            transform: this.container.style.transform
+        };
+        
+        try {
+            localStorage.setItem('inventoryWindowPosition', JSON.stringify(position));
+            console.log('Inventory window position saved:', position);
+        } catch (error) {
+            console.error('Error saving inventory window position:', error);
+        }
+    }
+    
+    // Restore window position from localStorage
+    restoreWindowPosition() {
+        try {
+            const savedPosition = localStorage.getItem('inventoryWindowPosition');
+            if (savedPosition && this.container) {
+                const position = JSON.parse(savedPosition);
+                
+                // Only restore if we have valid positions
+                if (position.left && position.left !== '50%') {
+                    this.container.style.left = position.left;
+                    this.container.style.top = position.top;
+                    this.container.style.transform = 'none'; // Reset the transform
+                }
+                
+                console.log('Inventory window position restored:', position);
+            }
+        } catch (error) {
+            console.error('Error restoring inventory window position:', error);
+        }
+    }
+    
+    // Make the inventory window draggable
+    makeDraggable(dragHandle) {
+        let isDragging = false;
+        let offsetX, offsetY;
+        
+        // Mouse down event - start dragging
+        dragHandle.addEventListener('mousedown', (e) => {
+            // Only allow left mouse button for dragging
+            if (e.button !== 0) return;
+            
+            // Prevent text selection during drag
+            e.preventDefault();
+            
+            // Change cursor style
+            dragHandle.style.cursor = 'grabbing';
+            
+            // Calculate the offset of the mouse pointer from the window's top-left corner
+            const rect = this.container.getBoundingClientRect();
+            offsetX = e.clientX - rect.left;
+            offsetY = e.clientY - rect.top;
+            
+            // Reset the centering transform if this is the first drag
+            if (this.container.style.transform.includes('translate(-50%, -50%)')) {
+                const rect = this.container.getBoundingClientRect();
+                this.container.style.left = (window.innerWidth / 2 - rect.width / 2) + 'px';
+                this.container.style.top = (window.innerHeight / 2 - rect.height / 2) + 'px';
+                this.container.style.transform = 'none';
+            }
+            
+            isDragging = true;
+        });
+        
+        // Mouse move event - move the window
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            // Calculate new position
+            const newLeft = e.clientX - offsetX;
+            const newTop = e.clientY - offsetY;
+            
+            // Apply new position
+            this.container.style.left = `${newLeft}px`;
+            this.container.style.top = `${newTop}px`;
+        });
+        
+        // Mouse up event - stop dragging
+        document.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            dragHandle.style.cursor = 'grab';
+            
+            // Save the new position
+            this.saveWindowPosition();
+        });
+        
+        // Mouse leave event - stop dragging if mouse leaves the window
+        document.addEventListener('mouseleave', () => {
+            if (isDragging) {
+                isDragging = false;
+                dragHandle.style.cursor = 'grab';
+                
+                // Save the new position
+                this.saveWindowPosition();
+            }
+        });
+        
+        // Add a tooltip to indicate draggable
+        dragHandle.title = 'Drag to move window';
+    }
+    
+    // Add pulsing glow effect to the window
+    addPulseEffect() {
+        // Create a keyframe animation for the border glow
+        const styleElement = document.createElement('style');
+        styleElement.id = 'inventory-pulse-animation';
+        styleElement.textContent = `
+            @keyframes inventoryBorderPulse {
+                0% { box-shadow: 0 0 15px rgba(0, 233, 150, 0.5); }
+                50% { box-shadow: 0 0 25px rgba(0, 233, 150, 0.8); }
+                100% { box-shadow: 0 0 15px rgba(0, 233, 150, 0.5); }
+            }
+        `;
+        document.head.appendChild(styleElement);
+        
+        // Apply the animation to the window
+        this.container.style.animation = 'inventoryBorderPulse 2s ease-in-out 3';
+        
+        // Remove the animation after it completes
+        setTimeout(() => {
+            this.removePulseEffect();
+        }, 6000); // 3 pulses at 2 seconds each
+    }
+    
+    // Remove the pulse effect
+    removePulseEffect() {
+        if (!this.container) return;
+        
+        this.container.style.animation = 'none';
+        const styleElement = document.getElementById('inventory-pulse-animation');
+        if (styleElement) {
+            document.head.removeChild(styleElement);
+        }
     }
 }
 
@@ -662,7 +865,11 @@ class BagItem extends EquipmentItem {
         if (!this.isOpen) {
             this.isOpen = true;
             this.windowUI = new BagWindowUI(this, x, y);
+            this.windowUI.open(x, y);
             return true;
+        } else if (this.windowUI) {
+            // If already open, just show the window
+            this.windowUI.open(x, y);
         }
         return false;
     }
@@ -683,78 +890,87 @@ class BagItem extends EquipmentItem {
 class BagWindowUI {
     constructor(bag, x, y) {
         this.bag = bag;
-        this.x = x || 100;
-        this.y = y || 100;
-        this.width = 250;
-        this.height = 300;
-        this.isDragging = false;
-        this.dragOffsetX = 0;
-        this.dragOffsetY = 0;
+        this.windowElement = null;
         this.slotElements = [];
+        this.x = x || window.innerWidth / 2;
+        this.y = y || window.innerHeight / 2;
+        this.isVisible = false;
         
         this.createWindow();
+        
+        // Restore saved position if available
+        this.restoreWindowPosition();
     }
     
     createWindow() {
-        // Create the window container
-        this.container = document.createElement('div');
-        this.container.className = 'bag-window';
-        this.container.style.position = 'absolute';
-        this.container.style.left = `${this.x}px`;
-        this.container.style.top = `${this.y}px`;
-        this.container.style.width = `${this.width}px`;
-        this.container.style.height = `${this.height}px`;
-        this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-        this.container.style.border = '2px solid rgb(0, 233, 150)';
-        this.container.style.borderRadius = '5px';
-        this.container.style.padding = '5px';
-        this.container.style.zIndex = '200'; // Higher than other UI elements
-        this.container.style.color = 'white';
-        this.container.style.fontFamily = 'Arial, sans-serif';
-        this.container.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.5)';
+        // Create the window
+        this.windowElement = document.createElement('div');
+        this.windowElement.className = 'bag-window';
+        this.windowElement.style.position = 'absolute';
+        this.windowElement.style.left = `${this.x - 110}px`; // Center the window
+        this.windowElement.style.top = `${this.y - 150}px`; // Position slightly above click point
+        this.windowElement.style.width = '220px';
+        this.windowElement.style.backgroundColor = 'rgba(20, 20, 20, 0.9)';
+        this.windowElement.style.border = '2px solid rgb(0, 233, 150)';
+        this.windowElement.style.borderRadius = '8px';
+        this.windowElement.style.padding = '15px';
+        this.windowElement.style.zIndex = '1001'; // Above inventory
+        this.windowElement.style.display = 'none';
+        this.windowElement.style.flexDirection = 'column';
+        this.windowElement.style.gap = '10px';
+        this.windowElement.style.boxShadow = '0 0 15px rgba(0, 233, 150, 0.3)';
+        this.windowElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
         
-        // Create the header
+        // Create header with drag handle
         const header = document.createElement('div');
-        header.className = 'bag-window-header';
         header.style.display = 'flex';
         header.style.justifyContent = 'space-between';
         header.style.alignItems = 'center';
-        header.style.padding = '5px';
-        header.style.borderBottom = '1px solid #555';
         header.style.marginBottom = '10px';
-        header.style.cursor = 'move'; // Show move cursor on header
+        header.style.cursor = 'grab'; // Show grab cursor to indicate draggable
         
-        // Add bag title
+        // Add drag handle icon
+        const dragIcon = document.createElement('div');
+        dragIcon.innerHTML = '&#8801;'; // Triple bar icon
+        dragIcon.style.marginRight = '10px';
+        dragIcon.style.fontSize = '18px';
+        dragIcon.style.color = 'rgba(0, 233, 150, 0.7)';
+        
+        // Add title
         const title = document.createElement('div');
-        title.textContent = this.bag.name;
+        title.textContent = this.bag.name || 'Bag';
+        title.style.color = 'white';
+        title.style.fontSize = '18px';
         title.style.fontWeight = 'bold';
-        title.style.color = 'rgb(0, 233, 150)';
-        header.appendChild(title);
+        
+        // Add drag handle and title to a container
+        const titleContainer = document.createElement('div');
+        titleContainer.style.display = 'flex';
+        titleContainer.style.alignItems = 'center';
+        titleContainer.appendChild(dragIcon);
+        titleContainer.appendChild(title);
+        header.appendChild(titleContainer);
         
         // Add close button
-        const closeButton = document.createElement('button');
-        closeButton.textContent = '✕';
-        closeButton.style.backgroundColor = 'transparent';
-        closeButton.style.border = 'none';
-        closeButton.style.color = 'rgb(0, 233, 150)';
-        closeButton.style.fontSize = '16px';
+        const closeButton = document.createElement('span');
+        closeButton.textContent = '×';
         closeButton.style.cursor = 'pointer';
-        closeButton.style.padding = '0 5px';
-        closeButton.addEventListener('click', () => this.bag.close());
+        closeButton.style.fontSize = '24px';
+        closeButton.style.fontWeight = 'bold';
+        closeButton.style.color = 'rgb(0, 233, 150)';
+        closeButton.style.transition = 'all 0.2s ease';
+        closeButton.addEventListener('mouseover', () => {
+            closeButton.style.transform = 'scale(1.2)';
+            closeButton.style.textShadow = '0 0 8px rgba(0, 233, 150, 0.8)';
+        });
+        closeButton.addEventListener('mouseout', () => {
+            closeButton.style.transform = 'scale(1)';
+            closeButton.style.textShadow = 'none';
+        });
+        closeButton.addEventListener('click', () => this.close());
         header.appendChild(closeButton);
         
-        // Make the header draggable
-        header.addEventListener('mousedown', (e) => {
-            this.isDragging = true;
-            this.dragOffsetX = e.clientX - this.container.offsetLeft;
-            this.dragOffsetY = e.clientY - this.container.offsetTop;
-            
-            // Add event listeners for dragging
-            document.addEventListener('mousemove', this.handleMouseMove);
-            document.addEventListener('mouseup', this.handleMouseUp);
-        });
-        
-        this.container.appendChild(header);
+        this.windowElement.appendChild(header);
         
         // Create slots container
         const slotsContainer = document.createElement('div');
@@ -771,10 +987,10 @@ class BagWindowUI {
             this.slotElements.push(slot);
         }
         
-        this.container.appendChild(slotsContainer);
+        this.windowElement.appendChild(slotsContainer);
         
         // Add to document
-        document.body.appendChild(this.container);
+        document.body.appendChild(this.windowElement);
         
         // Bind event handlers
         this.handleMouseMove = this.handleMouseMove.bind(this);
@@ -782,6 +998,9 @@ class BagWindowUI {
         
         // Update all slots
         this.updateAllSlots();
+        
+        // Make the bag window draggable
+        this.makeDraggable(header);
     }
     
     createSlotElement(slotIndex) {
@@ -1080,8 +1299,8 @@ class BagWindowUI {
     
     handleMouseMove(e) {
         if (this.isDragging) {
-            this.container.style.left = `${e.clientX - this.dragOffsetX}px`;
-            this.container.style.top = `${e.clientY - this.dragOffsetY}px`;
+            this.windowElement.style.left = `${e.clientX - this.dragOffsetX}px`;
+            this.windowElement.style.top = `${e.clientY - this.dragOffsetY}px`;
         }
         
         if (draggedItemElement) {
@@ -1097,9 +1316,196 @@ class BagWindowUI {
     }
     
     close() {
-        if (this.container && this.container.parentNode) {
-            this.container.parentNode.removeChild(this.container);
+        if (this.windowElement && this.windowElement.parentNode) {
+            this.windowElement.parentNode.removeChild(this.windowElement);
         }
+    }
+    
+    // Make the window draggable
+    makeDraggable(dragHandle) {
+        let isDragging = false;
+        let offsetX, offsetY;
+        
+        // Mouse down event - start dragging
+        dragHandle.addEventListener('mousedown', (e) => {
+            // Only allow left mouse button for dragging
+            if (e.button !== 0) return;
+            
+            // Prevent text selection during drag
+            e.preventDefault();
+            
+            // Change cursor style
+            dragHandle.style.cursor = 'grabbing';
+            
+            // Calculate the offset of the mouse pointer from the window's top-left corner
+            const rect = this.windowElement.getBoundingClientRect();
+            offsetX = e.clientX - rect.left;
+            offsetY = e.clientY - rect.top;
+            
+            isDragging = true;
+        });
+        
+        // Mouse move event - move the window
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            // Calculate new position
+            const newLeft = e.clientX - offsetX;
+            const newTop = e.clientY - offsetY;
+            
+            // Apply new position
+            this.windowElement.style.left = `${newLeft}px`;
+            this.windowElement.style.top = `${newTop}px`;
+        });
+        
+        // Mouse up event - stop dragging
+        document.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            dragHandle.style.cursor = 'grab';
+            
+            // Save the current position
+            this.saveWindowPosition();
+        });
+        
+        // Mouse leave event - stop dragging if mouse leaves the window
+        document.addEventListener('mouseleave', () => {
+            if (isDragging) {
+                isDragging = false;
+                dragHandle.style.cursor = 'grab';
+                
+                // Save the current position
+                this.saveWindowPosition();
+            }
+        });
+        
+        // Add a tooltip to indicate draggable
+        dragHandle.title = 'Drag to move window';
+    }
+    
+    // Save window position to localStorage
+    saveWindowPosition() {
+        if (!this.windowElement || !this.bag) return;
+        
+        const position = {
+            left: this.windowElement.style.left,
+            top: this.windowElement.style.top
+        };
+        
+        try {
+            localStorage.setItem(`bagWindow_${this.bag.id}_position`, JSON.stringify(position));
+            console.log(`Bag window position saved for ${this.bag.id}:`, position);
+        } catch (error) {
+            console.error('Error saving bag window position:', error);
+        }
+    }
+    
+    // Restore window position from localStorage
+    restoreWindowPosition() {
+        if (!this.bag) return;
+        
+        try {
+            const savedPosition = localStorage.getItem(`bagWindow_${this.bag.id}_position`);
+            if (savedPosition && this.windowElement) {
+                const position = JSON.parse(savedPosition);
+                
+                if (position.left && position.top) {
+                    this.windowElement.style.left = position.left;
+                    this.windowElement.style.top = position.top;
+                }
+                
+                console.log(`Bag window position restored for ${this.bag.id}:`, position);
+            }
+        } catch (error) {
+            console.error('Error restoring bag window position:', error);
+        }
+    }
+    
+    // Add pulsing glow effect to the window
+    addPulseEffect() {
+        // Create a keyframe animation for the border glow
+        const styleElement = document.createElement('style');
+        styleElement.id = `bag-pulse-animation-${this.bag.id}`;
+        styleElement.textContent = `
+            @keyframes bagBorderPulse {
+                0% { box-shadow: 0 0 15px rgba(0, 233, 150, 0.5); }
+                50% { box-shadow: 0 0 25px rgba(0, 233, 150, 0.8); }
+                100% { box-shadow: 0 0 15px rgba(0, 233, 150, 0.5); }
+            }
+        `;
+        document.head.appendChild(styleElement);
+        
+        // Apply the animation to the window
+        this.windowElement.style.animation = 'bagBorderPulse 2s ease-in-out 3';
+        
+        // Remove the animation after it completes
+        setTimeout(() => {
+            this.removePulseEffect();
+        }, 6000); // 3 pulses at 2 seconds each
+    }
+    
+    // Remove the pulse effect
+    removePulseEffect() {
+        if (!this.windowElement) return;
+        
+        this.windowElement.style.animation = 'none';
+        const styleElement = document.getElementById(`bag-pulse-animation-${this.bag.id}`);
+        if (styleElement) {
+            document.head.removeChild(styleElement);
+        }
+    }
+    
+    // Show the window with animation
+    open(x, y) {
+        if (x !== undefined && y !== undefined) {
+            this.x = x;
+            this.y = y;
+            this.windowElement.style.left = `${x - 110}px`;
+            this.windowElement.style.top = `${y - 150}px`;
+        }
+        
+        // Show window with animation
+        this.windowElement.style.display = 'flex';
+        this.windowElement.style.opacity = '0';
+        this.windowElement.style.transform = 'scale(0.9)';
+        
+        // Trigger animation after a small delay (needed for the transition to work)
+        setTimeout(() => {
+            this.windowElement.style.opacity = '1';
+            this.windowElement.style.transform = 'scale(1)';
+        }, 10);
+        
+        // Add a pulsing glow effect to the border
+        this.addPulseEffect();
+        
+        this.isVisible = true;
+        
+        // Update all slots
+        this.updateAllSlots();
+    }
+    
+    // Close the window with animation
+    close() {
+        // Hide window with fade out
+        this.windowElement.style.opacity = '0';
+        this.windowElement.style.transform = 'scale(0.9)';
+        
+        // Remove the window after animation completes
+        setTimeout(() => {
+            this.windowElement.style.display = 'none';
+            // Reset transform for next time
+            this.windowElement.style.transform = 'scale(1)';
+            // Remove pulse effect
+            this.removePulseEffect();
+            
+            this.isVisible = false;
+            
+            // Make sure to call the bag's close method if it exists
+            if (this.bag && typeof this.bag.close === 'function') {
+                this.bag.close();
+            }
+        }, 300);
     }
 }
 
@@ -1430,6 +1836,9 @@ class EquipmentUI {
             
             // Remove compact equipment display - we're using the main panel instead
             // this.createCompactEquipmentDisplay();
+            
+            // Restore saved position if available
+            this.restoreWindowPosition();
         } catch (err) {
             console.error('Error creating equipment UI:', err);
         }
@@ -1470,7 +1879,7 @@ class EquipmentUI {
         this.equipmentPanel.style.flexDirection = 'column';
         this.equipmentPanel.style.gap = '10px';
         this.equipmentPanel.style.boxShadow = '0 0 15px rgba(0, 233, 150, 0.3)';
-        this.equipmentPanel.style.transition = 'left 0.3s ease, right 0.3s ease';
+        this.equipmentPanel.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
         
         // Create header
         const header = document.createElement('div');
@@ -1478,12 +1887,27 @@ class EquipmentUI {
         header.style.justifyContent = 'space-between';
         header.style.alignItems = 'center';
         header.style.marginBottom = '10px';
+        header.style.cursor = 'grab'; // Show grab cursor to indicate draggable
+        
+        // Add drag handle icon
+        const dragIcon = document.createElement('div');
+        dragIcon.innerHTML = '&#8801;'; // Triple bar icon
+        dragIcon.style.marginRight = '10px';
+        dragIcon.style.fontSize = '18px';
+        dragIcon.style.color = 'rgba(0, 233, 150, 0.7)';
         
         const title = document.createElement('h2');
         title.textContent = 'Equipment';
         title.style.color = 'rgb(0, 233, 150)';
         title.style.margin = '0';
-        header.appendChild(title);
+        
+        // Add drag handle and title to a container
+        const titleContainer = document.createElement('div');
+        titleContainer.style.display = 'flex';
+        titleContainer.style.alignItems = 'center';
+        titleContainer.appendChild(dragIcon);
+        titleContainer.appendChild(title);
+        header.appendChild(titleContainer);
         
         const closeButton = document.createElement('button');
         closeButton.textContent = '✕';
@@ -1492,7 +1916,16 @@ class EquipmentUI {
         closeButton.style.color = 'rgb(0, 233, 150)';
         closeButton.style.fontSize = '20px';
         closeButton.style.cursor = 'pointer';
-        closeButton.addEventListener('click', () => this.hideEquipmentPanel());
+        closeButton.style.transition = 'all 0.2s ease';
+        closeButton.addEventListener('mouseover', () => {
+            closeButton.style.transform = 'scale(1.2)';
+            closeButton.style.textShadow = '0 0 8px rgba(0, 233, 150, 0.8)';
+        });
+        closeButton.addEventListener('mouseout', () => {
+            closeButton.style.transform = 'scale(1)';
+            closeButton.style.textShadow = 'none';
+        });
+        closeButton.addEventListener('click', () => this.toggleEquipmentPanel());
         header.appendChild(closeButton);
         
         this.equipmentPanel.appendChild(header);
@@ -1505,6 +1938,9 @@ class EquipmentUI {
         gridContainer.style.gap = '10px';
         gridContainer.style.justifyItems = 'center';
         this.equipmentPanel.appendChild(gridContainer);
+        
+        // Make the equipment panel draggable
+        this.makeDraggable(header);
         
         // Define the grid layout with slot IDs exactly as requested
         const gridLayout = [
@@ -2347,30 +2783,57 @@ class EquipmentUI {
     }
     
     showEquipmentPanel() {
-        this.equipmentPanel.style.display = 'block';
+        // Show window with animation
+        this.equipmentPanel.style.display = 'flex';
+        this.equipmentPanel.style.opacity = '0';
+        this.equipmentPanel.style.transform = 'scale(0.9) translateY(-20px)';
+        
+        // Trigger animation after a small delay (needed for the transition to work)
+        setTimeout(() => {
+            this.equipmentPanel.style.opacity = '1';
+            this.equipmentPanel.style.transform = 'scale(1) translateY(0)';
+        }, 10);
+        
+        // Add a pulsing glow effect to the border
+        this.addPulseEffect();
+        
         this.isPanelVisible = true;
+        
+        // Update button appearance for visible panel
+        if (this.equipmentButton) {
+            this.equipmentButton.style.border = '2px solid rgb(0, 233, 150)';
+            this.equipmentButton.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.5)';
+        }
     }
     
     hideEquipmentPanel() {
-        this.equipmentPanel.style.display = 'none';
+        // Hide window with fade out
+        this.equipmentPanel.style.opacity = '0';
+        this.equipmentPanel.style.transform = 'scale(0.9) translateY(-10px)';
+        
+        // Remove the window after animation completes
+        setTimeout(() => {
+            this.equipmentPanel.style.display = 'none';
+            // Reset transform for next time
+            this.equipmentPanel.style.transform = 'scale(1) translateY(0)';
+            // Remove pulse effect
+            this.removePulseEffect();
+        }, 300);
+        
         this.isPanelVisible = false;
+        
+        // Update button appearance for hidden panel
+        if (this.equipmentButton) {
+            this.equipmentButton.style.border = '2px solid rgba(0, 233, 150, 0.5)';
+            this.equipmentButton.style.boxShadow = '0 0 5px rgba(0, 233, 150, 0.2)';
+        }
     }
     
     toggleEquipmentPanel() {
         if (this.isPanelVisible) {
             this.hideEquipmentPanel();
-            // Update button appearance for hidden panel
-            if (this.equipmentButton) {
-                this.equipmentButton.style.border = '2px solid rgba(0, 233, 150, 0.5)';
-                this.equipmentButton.style.boxShadow = '0 0 5px rgba(0, 233, 150, 0.2)';
-            }
         } else {
             this.showEquipmentPanel();
-            // Update button appearance for visible panel
-            if (this.equipmentButton) {
-                this.equipmentButton.style.border = '2px solid rgb(0, 233, 150)';
-                this.equipmentButton.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.5)';
-            }
         }
     }
     
@@ -2586,6 +3049,161 @@ class EquipmentUI {
         // Add to document
         document.body.appendChild(equipmentButton);
         this.equipmentButton = equipmentButton;
+    }
+    
+    // Save window position to localStorage
+    saveWindowPosition() {
+        if (!this.equipmentPanel) return;
+        
+        const position = {
+            left: this.equipmentPanel.style.left,
+            top: this.equipmentPanel.style.top,
+            right: this.equipmentPanel.style.right
+        };
+        
+        try {
+            localStorage.setItem('equipmentWindowPosition', JSON.stringify(position));
+            console.log('Equipment window position saved:', position);
+        } catch (error) {
+            console.error('Error saving equipment window position:', error);
+        }
+    }
+    
+    // Restore window position from localStorage
+    restoreWindowPosition() {
+        try {
+            const savedPosition = localStorage.getItem('equipmentWindowPosition');
+            if (savedPosition && this.equipmentPanel) {
+                const position = JSON.parse(savedPosition);
+                
+                // If we have stored positions, use them
+                if (position.left && position.left !== 'auto') {
+                    this.equipmentPanel.style.left = position.left;
+                    this.equipmentPanel.style.right = 'auto';
+                    this.equipmentPanel.style.transform = 'none';
+                } else if (position.right && position.right !== 'auto') {
+                    this.equipmentPanel.style.right = position.right;
+                    this.equipmentPanel.style.left = 'auto';
+                    this.equipmentPanel.style.transform = 'none';
+                }
+                
+                if (position.top && position.top !== 'auto') {
+                    this.equipmentPanel.style.top = position.top;
+                    this.equipmentPanel.style.transform = 'none';
+                }
+                
+                console.log('Equipment window position restored:', position);
+            }
+        } catch (error) {
+            console.error('Error restoring equipment window position:', error);
+        }
+    }
+    
+    // Make the equipment panel draggable
+    makeDraggable(dragHandle) {
+        let isDragging = false;
+        let offsetX, offsetY;
+        
+        // Mouse down event - start dragging
+        dragHandle.addEventListener('mousedown', (e) => {
+            // Only allow left mouse button for dragging
+            if (e.button !== 0) return;
+            
+            // Prevent text selection during drag
+            e.preventDefault();
+            
+            // Change cursor style
+            dragHandle.style.cursor = 'grabbing';
+            
+            // Calculate the offset of the mouse pointer from the window's top-left corner
+            const rect = this.equipmentPanel.getBoundingClientRect();
+            offsetX = e.clientX - rect.left;
+            offsetY = e.clientY - rect.top;
+            
+            // Reset transform to ensure proper positioning
+            this.equipmentPanel.style.transform = 'none';
+            
+            // Reset right position and set left position to ensure consistent dragging
+            if (window.getComputedStyle(this.equipmentPanel).right !== 'auto') {
+                const rect = this.equipmentPanel.getBoundingClientRect();
+                this.equipmentPanel.style.left = (window.innerWidth - rect.right) + 'px';
+                this.equipmentPanel.style.right = 'auto';
+            }
+            
+            isDragging = true;
+        });
+        
+        // Mouse move event - move the window
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            // Calculate new position
+            const newLeft = e.clientX - offsetX;
+            const newTop = e.clientY - offsetY;
+            
+            // Apply new position
+            this.equipmentPanel.style.left = `${newLeft}px`;
+            this.equipmentPanel.style.top = `${newTop}px`;
+        });
+        
+        // Mouse up event - stop dragging
+        document.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            
+            isDragging = false;
+            dragHandle.style.cursor = 'grab';
+            
+            // Save the new position
+            this.saveWindowPosition();
+        });
+        
+        // Mouse leave event - stop dragging if mouse leaves the window
+        document.addEventListener('mouseleave', () => {
+            if (isDragging) {
+                isDragging = false;
+                dragHandle.style.cursor = 'grab';
+                
+                // Save the new position
+                this.saveWindowPosition();
+            }
+        });
+        
+        // Add a tooltip to indicate draggable
+        dragHandle.title = 'Drag to move window';
+    }
+    
+    // Add pulsing glow effect to the window
+    addPulseEffect() {
+        // Create a keyframe animation for the border glow
+        const styleElement = document.createElement('style');
+        styleElement.id = 'equipment-pulse-animation';
+        styleElement.textContent = `
+            @keyframes equipmentBorderPulse {
+                0% { box-shadow: 0 0 15px rgba(0, 233, 150, 0.5); }
+                50% { box-shadow: 0 0 25px rgba(0, 233, 150, 0.8); }
+                100% { box-shadow: 0 0 15px rgba(0, 233, 150, 0.5); }
+            }
+        `;
+        document.head.appendChild(styleElement);
+        
+        // Apply the animation to the window
+        this.equipmentPanel.style.animation = 'equipmentBorderPulse 2s ease-in-out 3';
+        
+        // Remove the animation after it completes
+        setTimeout(() => {
+            this.removePulseEffect();
+        }, 6000); // 3 pulses at 2 seconds each
+    }
+    
+    // Remove the pulse effect
+    removePulseEffect() {
+        if (!this.equipmentPanel) return;
+        
+        this.equipmentPanel.style.animation = 'none';
+        const styleElement = document.getElementById('equipment-pulse-animation');
+        if (styleElement) {
+            document.head.removeChild(styleElement);
+        }
     }
 }
 
