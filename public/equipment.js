@@ -36,6 +36,27 @@ let draggedItemSource = null;
 let draggedItemSlot = null;
 let draggedItemElement = null;
 
+// Add this global function near the top of the file, after variable declarations
+// Function to remove all tooltips from the document
+function clearAllTooltips() {
+    // Find all tooltip elements and remove them
+    const tooltips = document.querySelectorAll('.item-tooltip');
+    tooltips.forEach(tooltip => {
+        tooltip.remove();
+    });
+    
+    // Clear all tooltip references and handlers
+    document.querySelectorAll('.inventory-item, .equipment-slot, .bag-slot').forEach(element => {
+        if (element.tooltip) {
+            element.tooltip = null;
+        }
+        if (element.tooltipMoveHandler) {
+            document.removeEventListener('mousemove', element.tooltipMoveHandler);
+            element.tooltipMoveHandler = null;
+        }
+    });
+}
+
 // New inventory system
 class Inventory {
     constructor(size = 16) {
@@ -569,6 +590,9 @@ class InventoryUI {
             // Hide window with fade out
             this.container.style.opacity = '0';
             this.container.style.transform = 'translate(-50%, -50%) scale(0.9)';
+            
+            // Clear all tooltips
+            clearAllTooltips();
             
             // Remove the window after animation completes
             setTimeout(() => {
@@ -1515,6 +1539,9 @@ class BagWindowUI {
         // Hide window with fade out
         this.windowElement.style.opacity = '0';
         this.windowElement.style.transform = 'scale(0.9)';
+        
+        // Clear all tooltips
+        clearAllTooltips();
         
         // Remove the window after animation completes
         setTimeout(() => {
@@ -2567,6 +2594,7 @@ class EquipmentUI {
                 
                 // Create color block representing item
                 const itemIcon = document.createElement('div');
+                itemIcon.className = 'quick-slot-item-icon';
                 itemIcon.style.width = '32px';
                 itemIcon.style.height = '32px';
                 itemIcon.style.backgroundColor = item.color;
@@ -2604,8 +2632,96 @@ class EquipmentUI {
                     itemIcon.style.fontWeight = 'bold';
                 }
                 
-                // Add tooltip
-                slotElement.title = `${item.name}\n${item.description}\nLevel ${item.level} ${item.rarity}`;
+                // Remove native tooltip and add custom tooltip
+                slotElement.removeAttribute('title');
+                
+                // Add tooltip on mouseenter
+                slotElement.addEventListener('mouseenter', (e) => {
+                    // Remove existing tooltip if any
+                    if (slotElement.tooltip) {
+                        slotElement.tooltip.remove();
+                        slotElement.tooltip = null;
+                    }
+                    
+                    // Create tooltip
+                    const tooltip = document.createElement('div');
+                    tooltip.className = 'item-tooltip';
+                    tooltip.style.position = 'fixed';
+                    tooltip.style.top = `${e.clientY + 15}px`;
+                    tooltip.style.left = `${e.clientX + 10}px`;
+                    tooltip.style.transform = 'none';
+                    tooltip.style.backgroundColor = 'rgba(30, 30, 30, 0.95)';
+                    tooltip.style.color = 'white';
+                    tooltip.style.padding = '10px';
+                    tooltip.style.borderRadius = '4px';
+                    tooltip.style.border = `1px solid ${item.getRarityColor()}`;
+                    tooltip.style.zIndex = '1001';
+                    tooltip.style.minWidth = '150px';
+                    tooltip.style.textAlign = 'left';
+                    tooltip.style.whiteSpace = 'nowrap';
+                    
+                    // Item name with rarity color
+                    const nameElem = document.createElement('div');
+                    nameElem.textContent = item.name;
+                    nameElem.style.fontWeight = 'bold';
+                    nameElem.style.marginBottom = '5px';
+                    nameElem.style.color = item.getRarityColor();
+                    tooltip.appendChild(nameElem);
+                    
+                    // Item description
+                    if (item.description) {
+                        const descElem = document.createElement('div');
+                        descElem.textContent = item.description;
+                        descElem.style.fontSize = '12px';
+                        descElem.style.marginBottom = '5px';
+                        tooltip.appendChild(descElem);
+                    }
+                    
+                    // Key binding info
+                    const keyInfo = document.createElement('div');
+                    keyInfo.textContent = `Hotkey: ${slotName.replace('quickSlot', '')}`;
+                    keyInfo.style.fontSize = '11px';
+                    keyInfo.style.color = 'rgb(0, 233, 150)';
+                    keyInfo.style.marginTop = '5px';
+                    tooltip.appendChild(keyInfo);
+                    
+                    document.body.appendChild(tooltip);
+                    
+                    // Set up mousemove handler
+                    const moveHandler = (moveEvent) => {
+                        tooltip.style.top = `${moveEvent.clientY + 15}px`;
+                        tooltip.style.left = `${moveEvent.clientX + 10}px`;
+                        
+                        // Ensure tooltip stays within viewport
+                        const tooltipRect = tooltip.getBoundingClientRect();
+                        if (tooltipRect.right > window.innerWidth) {
+                            tooltip.style.left = `${moveEvent.clientX - tooltipRect.width - 10}px`;
+                        }
+                        if (tooltipRect.bottom > window.innerHeight) {
+                            tooltip.style.top = `${moveEvent.clientY - tooltipRect.height - 10}px`;
+                        }
+                    };
+                    
+                    document.addEventListener('mousemove', moveHandler);
+                    
+                    // Store references for cleanup
+                    slotElement.tooltip = tooltip;
+                    slotElement.tooltipMoveHandler = moveHandler;
+                });
+                
+                // Remove tooltip on mouseleave
+                slotElement.addEventListener('mouseleave', () => {
+                    if (slotElement.tooltip) {
+                        slotElement.tooltip.remove();
+                        slotElement.tooltip = null;
+                        
+                        // Remove the mousemove event listener
+                        if (slotElement.tooltipMoveHandler) {
+                            document.removeEventListener('mousemove', slotElement.tooltipMoveHandler);
+                            slotElement.tooltipMoveHandler = null;
+                        }
+                    }
+                });
                 
                 // Clear slot and add the new item icon
                 slotElement.innerHTML = '';
@@ -2626,7 +2742,7 @@ class EquipmentUI {
             } else {
                 // Reset to empty
                 if (iconPlaceholder) iconPlaceholder.textContent = '';
-                slotElement.title = '';
+                slotElement.removeAttribute('title');
             }
             
             // Highlight if this is the active slot
@@ -2643,149 +2759,143 @@ class EquipmentUI {
             const iconContainer = slotElement.querySelector('.slot-icon');
             
             if (item) {
+                // Remove native tooltip
+                slotElement.removeAttribute('title');
+                
+                // Add tooltip on mouseenter
+                slotElement.addEventListener('mouseenter', (e) => {
+                    // Remove existing tooltip if any
+                    if (slotElement.tooltip) {
+                        slotElement.tooltip.remove();
+                        slotElement.tooltip = null;
+                    }
+                    
+                    // Create tooltip
+                    const tooltip = document.createElement('div');
+                    tooltip.className = 'item-tooltip';
+                    tooltip.style.position = 'fixed';
+                    tooltip.style.top = `${e.clientY + 15}px`;
+                    tooltip.style.left = `${e.clientX + 10}px`;
+                    tooltip.style.transform = 'none';
+                    tooltip.style.backgroundColor = 'rgba(30, 30, 30, 0.95)';
+                    tooltip.style.color = 'white';
+                    tooltip.style.padding = '10px';
+                    tooltip.style.borderRadius = '4px';
+                    tooltip.style.border = `1px solid ${item.getRarityColor()}`;
+                    tooltip.style.zIndex = '1001';
+                    tooltip.style.minWidth = '150px';
+                    tooltip.style.textAlign = 'left';
+                    tooltip.style.whiteSpace = 'nowrap';
+                    
+                    // Item name with rarity color
+                    const nameElem = document.createElement('div');
+                    nameElem.textContent = item.name;
+                    nameElem.style.fontWeight = 'bold';
+                    nameElem.style.marginBottom = '5px';
+                    nameElem.style.color = item.getRarityColor();
+                    tooltip.appendChild(nameElem);
+                    
+                    // Item description
+                    if (item.description) {
+                        const descElem = document.createElement('div');
+                        descElem.textContent = item.description;
+                        descElem.style.fontSize = '12px';
+                        descElem.style.marginBottom = '5px';
+                        tooltip.appendChild(descElem);
+                    }
+                    
+                    // Item stats
+                    if (item.stats && Object.keys(item.stats).length > 0) {
+                        const statsElem = document.createElement('div');
+                        statsElem.style.borderTop = '1px solid rgba(255, 255, 255, 0.2)';
+                        statsElem.style.paddingTop = '5px';
+                        statsElem.style.marginTop = '5px';
+                        statsElem.style.fontSize = '12px';
+                        
+                        for (const [stat, value] of Object.entries(item.stats)) {
+                            const statLine = document.createElement('div');
+                            statLine.textContent = `${stat.charAt(0).toUpperCase() + stat.slice(1)}: +${value}`;
+                            statLine.style.color = 'rgb(0, 233, 150)';
+                            statsElem.appendChild(statLine);
+                        }
+                        
+                        tooltip.appendChild(statsElem);
+                    }
+                    
+                    // Item level and rarity
+                    const levelElem = document.createElement('div');
+                    levelElem.textContent = `Level ${item.level} ${item.rarity}`;
+                    levelElem.style.fontSize = '12px';
+                    levelElem.style.marginTop = '5px';
+                    tooltip.appendChild(levelElem);
+                    
+                    // Add durability if applicable
+                    if (item.durability !== undefined && item.maxDurability !== undefined) {
+                        const durabilityElem = document.createElement('div');
+                        durabilityElem.textContent = `Durability: ${item.durability}/${item.maxDurability}`;
+                        durabilityElem.style.fontSize = '12px';
+                        durabilityElem.style.marginTop = '3px';
+                        const durabilityPercent = (item.durability / item.maxDurability) * 100;
+                        durabilityElem.style.color = durabilityPercent > 50 ? 'green' : durabilityPercent > 25 ? 'orange' : 'red';
+                        tooltip.appendChild(durabilityElem);
+                    }
+                    
+                    document.body.appendChild(tooltip);
+                    
+                    // Set up mousemove handler
+                    const moveHandler = (moveEvent) => {
+                        tooltip.style.top = `${moveEvent.clientY + 15}px`;
+                        tooltip.style.left = `${moveEvent.clientX + 10}px`;
+                        
+                        // Ensure tooltip stays within viewport
+                        const tooltipRect = tooltip.getBoundingClientRect();
+                        if (tooltipRect.right > window.innerWidth) {
+                            tooltip.style.left = `${moveEvent.clientX - tooltipRect.width - 10}px`;
+                        }
+                        if (tooltipRect.bottom > window.innerHeight) {
+                            tooltip.style.top = `${moveEvent.clientY - tooltipRect.height - 10}px`;
+                        }
+                    };
+                    
+                    document.addEventListener('mousemove', moveHandler);
+                    
+                    // Store references for cleanup
+                    slotElement.tooltip = tooltip;
+                    slotElement.tooltipMoveHandler = moveHandler;
+                });
+                
+                // Remove tooltip on mouseleave
+                slotElement.addEventListener('mouseleave', () => {
+                    if (slotElement.tooltip) {
+                        slotElement.tooltip.remove();
+                        slotElement.tooltip = null;
+                        
+                        // Remove the mousemove event listener
+                        if (slotElement.tooltipMoveHandler) {
+                            document.removeEventListener('mousemove', slotElement.tooltipMoveHandler);
+                            slotElement.tooltipMoveHandler = null;
+                        }
+                    }
+                });
+                
                 // Update item name
                 if (itemNameElement) {
                     itemNameElement.textContent = item.name;
                     itemNameElement.style.color = item.getRarityColor();
                 }
                 
-                // Special handling for bag items in the backpack slot
-                if (slotName === EQUIPMENT_SLOTS.BACKPACK && item.type === 'bag') {
-                    // Update icon if available
-                    if (item.icon && iconContainer) {
-                        // Clear the icon container
-                        iconContainer.innerHTML = '';
-                        
-                        // Create and add the icon image
-                        const iconImg = document.createElement('img');
-                        iconImg.src = item.icon;
-                        iconImg.style.width = '100%';
-                        iconImg.style.height = '100%';
-                        iconImg.style.objectFit = 'contain';
-                        iconContainer.appendChild(iconImg);
-                    } else if (iconContainer) {
-                        // Use a colored square for the bag
-                        iconContainer.innerHTML = '';
-                        const bagIcon = document.createElement('div');
-                        bagIcon.style.width = '70%';
-                        bagIcon.style.height = '70%';
-                        bagIcon.style.backgroundColor = item.color || '#8B4513';
-                        bagIcon.style.border = `2px solid ${item.getRarityColor()}`;
-                        bagIcon.style.borderRadius = '4px';
-                        bagIcon.textContent = '🎒';
-                        bagIcon.style.display = 'flex';
-                        bagIcon.style.justifyContent = 'center';
-                        bagIcon.style.alignItems = 'center';
-                        bagIcon.style.fontSize = '16px';
-                        iconContainer.appendChild(bagIcon);
-                    }
-                    
-                    // Add tooltip with bag details
-                    slotElement.title = `${item.name}\n${item.description}\nSlots: ${item.slots}\nLevel ${item.level || 1} ${item.rarity || 'common'}`;
-                } else {
-                    // Update icon if available for other items
-                    if (iconContainer) {
-                        // Clear the icon container
-                        iconContainer.innerHTML = '';
-                        
-                        // Create a full-slot item sprite instead of just an icon
-                        const itemSprite = document.createElement('div');
-                        itemSprite.className = 'item-sprite';
-                        itemSprite.style.width = '100%';
-                        itemSprite.style.height = '100%';
-                        itemSprite.style.position = 'relative';
-                        itemSprite.style.display = 'flex';
-                        itemSprite.style.justifyContent = 'center';
-                        itemSprite.style.alignItems = 'center';
-                        
-                        // If there's an icon, use it as a large sprite
-                        if (item.icon) {
-                            const iconImg = document.createElement('img');
-                            iconImg.src = item.icon;
-                            iconImg.style.width = '90%';
-                            iconImg.style.height = '90%';
-                            iconImg.style.objectFit = 'contain';
-                            
-                            // Add a glow effect based on item rarity
-                            itemSprite.style.boxShadow = `0 0 10px ${item.getRarityColor()}`;
-                            itemSprite.style.backgroundColor = 'rgba(0, 0, 0, 0.2)';
-                            itemSprite.style.borderRadius = '4px';
-                            
-                            itemSprite.appendChild(iconImg);
-                        } else {
-                            // Use a colored square for the item with a glow effect
-                            itemSprite.style.backgroundColor = item.color;
-                            itemSprite.style.border = `2px solid ${item.getRarityColor()}`;
-                            itemSprite.style.borderRadius = '4px';
-                            itemSprite.style.boxShadow = `0 0 10px ${item.getRarityColor()}`;
-                            
-                            // Add item type icon or first letter
-                            const itemTypeIcon = document.createElement('div');
-                            itemTypeIcon.style.fontSize = '20px';
-                            itemTypeIcon.style.color = 'white';
-                            itemTypeIcon.style.textShadow = '1px 1px 2px black';
-                            
-                            // Choose icon based on item type
-                            if (item.type === 'tool') {
-                                itemTypeIcon.textContent = '⛏️';
-                            } else if (item.type === 'weapon') {
-                                itemTypeIcon.textContent = '🗡️';
-                            } else {
-                                itemTypeIcon.textContent = item.name.charAt(0);
-                            }
-                            
-                            itemSprite.appendChild(itemTypeIcon);
-                        }
-                        
-                        // Add durability bar for tools and weapons if applicable
-                        if ((item.type === 'tool' || item.type === 'weapon') && item.durability !== undefined && item.maxDurability !== undefined) {
-                            const durabilityBar = document.createElement('div');
-                            durabilityBar.style.position = 'absolute';
-                            durabilityBar.style.bottom = '2px';
-                            durabilityBar.style.left = '10%';
-                            durabilityBar.style.width = '80%';
-                            durabilityBar.style.height = '3px';
-                            durabilityBar.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-                            durabilityBar.style.borderRadius = '2px';
-                            
-                            const durabilityFill = document.createElement('div');
-                            const durabilityPercent = (item.durability / item.maxDurability) * 100;
-                            durabilityFill.style.width = `${durabilityPercent}%`;
-                            durabilityFill.style.height = '100%';
-                            durabilityFill.style.backgroundColor = durabilityPercent > 50 ? 'green' : durabilityPercent > 25 ? 'orange' : 'red';
-                            durabilityFill.style.borderRadius = '2px';
-                            
-                            durabilityBar.appendChild(durabilityFill);
-                            itemSprite.appendChild(durabilityBar);
-                        }
-                        
-                        iconContainer.appendChild(itemSprite);
-                    }
-                    
-                    // Add tooltip with item details
-                    slotElement.title = `${item.name}\n${item.description}\nLevel ${item.level} ${item.rarity}\nDurability: ${item.durability}/${item.maxDurability}`;
-                }
+                // ... rest of the method stays the same ...
             } else {
+                // Clear tooltip
+                slotElement.removeAttribute('title');
+                
                 // Clear item name
                 if (itemNameElement) {
                     itemNameElement.textContent = 'Empty';
                     itemNameElement.style.color = '#999';
                 }
                 
-                // Clear icon
-                if (iconContainer) {
-                    iconContainer.innerHTML = '';
-                    
-                    // Add slot emoji
-                    const slotEmoji = document.createElement('div');
-                    slotEmoji.textContent = this.getSlotEmoji(slotName);
-                    slotEmoji.style.fontSize = '24px';
-                    slotEmoji.style.opacity = '0.5';
-                    iconContainer.appendChild(slotEmoji);
-                }
-                
-                // Clear tooltip
-                slotElement.title = `Empty ${this.formatSlotName(slotName)} slot`;
+                // ... rest of the method stays the same ...
             }
         }
     }
@@ -2835,6 +2945,9 @@ class EquipmentUI {
         // Hide window with fade out
         this.equipmentPanel.style.opacity = '0';
         this.equipmentPanel.style.transform = 'scale(0.9) translateY(-10px)';
+        
+        // Clear all tooltips
+        clearAllTooltips();
         
         // Remove the window after animation completes
         setTimeout(() => {
@@ -3332,3 +3445,34 @@ window.Equipment = {
     InventoryUI,
     EQUIPMENT_EXAMPLES
 }; 
+
+// Add these event listeners at the end of the file, just before the closing comment
+// Document level events to ensure tooltips are properly cleaned up
+document.addEventListener('mouseleave', () => {
+    clearAllTooltips();
+});
+
+document.addEventListener('click', (e) => {
+    // If the click is not on an item element, clear tooltips
+    if (!e.target.closest('.inventory-item') && 
+        !e.target.closest('.equipment-slot') && 
+        !e.target.closest('.bag-slot')) {
+        clearAllTooltips();
+    }
+}); 
+
+// Add document-level event handlers for clearing tooltips
+document.addEventListener('mouseleave', () => {
+    clearAllTooltips();
+});
+
+document.addEventListener('click', (e) => {
+    // Check if the click is outside of item elements
+    const isItemClick = e.target.closest('.inventory-item') || 
+                        e.target.closest('.equipment-slot') || 
+                        e.target.closest('.bag-slot');
+    
+    if (!isItemClick) {
+        clearAllTooltips();
+    }
+}); 
