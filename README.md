@@ -80,4 +80,139 @@ The game verifies local save data against server save data:
 - Add chat functionality
 - Create game rooms for multiple separate games
 - Add detailed player statistics and progression
-- Implement combat system 
+- Implement combat system
+
+## Installation on Ubuntu 24.04
+
+### Quick Installation (Recommended)
+
+For a quick and automated installation that configures BruteFight to run on port 4444, use the installation script:
+
+```bash
+# Make the script executable
+chmod +x install_brutefight.sh
+
+# Run the installation script
+./install_brutefight.sh
+```
+
+This script will:
+1. Install Node.js and npm if not already installed
+2. Create a directory for the game
+3. Install required dependencies
+4. Configure the game to run on port 4444
+5. Set up a systemd service so the game runs in the background
+6. Open the firewall port
+7. Start the game server
+
+After installation, you can access the game at:
+- Local access: http://localhost:4444
+- Remote access: http://YOUR_SERVER_IP:4444
+
+### Manual Installation
+
+If you prefer to install manually, follow these steps:
+
+1. Install Node.js and npm:
+   ```bash
+   sudo apt update
+   sudo apt install -y nodejs npm
+   ```
+
+2. Create a directory for the game:
+   ```bash
+   mkdir -p ~/brutefight
+   cd ~/brutefight
+   ```
+
+3. Copy all game files to this directory
+
+4. Install dependencies:
+   ```bash
+   npm install express socket.io
+   ```
+
+5. Configure the port to 4444:
+   ```bash
+   # Make the script executable
+   chmod +x set_port.sh
+   
+   # Run the script to change the port
+   ./set_port.sh
+   ```
+
+6. Create the accounts directory:
+   ```bash
+   mkdir -p accounts
+   ```
+
+7. Start the server:
+   ```bash
+   node server.js
+   ```
+
+For more detailed installation instructions, see the [LINUX_INSTALL.md](LINUX_INSTALL.md) file.
+
+## Managing the Game Server
+
+If you used the automated installation script, the game runs as a systemd service. You can manage it with these commands:
+
+```bash
+# Start the server
+sudo systemctl start brutefight
+
+# Stop the server
+sudo systemctl stop brutefight
+
+# Restart the server
+sudo systemctl restart brutefight
+
+# Check server status
+sudo systemctl status brutefight
+
+# View server logs
+sudo journalctl -u brutefight
+```
+
+## Manual Start
+
+If you prefer to run the server manually:
+
+```bash
+cd ~/brutefight
+node server.js
+```
+
+To keep it running after you close the terminal:
+
+```bash
+cd ~/brutefight
+nohup node server.js > brutefight.log 2>&1 &
+```
+
+## Troubleshooting
+
+If you encounter issues:
+
+1. Check if the port is already in use:
+   ```bash
+   sudo lsof -i :4444
+   ```
+
+2. Check server logs:
+   ```bash
+   sudo journalctl -u brutefight
+   ```
+
+3. Verify Node.js is installed correctly:
+   ```bash
+   node --version
+   npm --version
+   ```
+
+4. Make sure the firewall allows connections to port 4444:
+   ```bash
+   sudo ufw status
+   ```
+
+For more troubleshooting tips, see the [LINUX_INSTALL.md](LINUX_INSTALL.md) file. 

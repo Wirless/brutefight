@@ -71,6 +71,10 @@
         input:focus {
             outline: 2px solid rgb(0, 233, 150);
         }
+        .form-group {
+            margin-bottom: 10px;
+            width: 100%;
+        }
         #playersList {
             position: absolute;
             top: 10px;
@@ -214,7 +218,12 @@
     <!-- Login Panel -->
     <div id="loginPanel">
         <h2>Login</h2>
-        <input type="text" id="usernameInput" placeholder="Enter your username">
+        <div class="form-group">
+            <input type="text" id="usernameInput" placeholder="Enter your username">
+        </div>
+        <div class="form-group">
+            <input type="password" id="passwordInput" placeholder="Enter your password">
+        </div>
         <button id="loginButton">Join Game</button>
         <p id="loginStatus"></p>
     </div>

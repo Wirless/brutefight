@@ -392,6 +392,8 @@ class AxeAttack extends Attack {
         this.range = 90; // Shorter range than pickaxe
         this.length = 45; // Length of the axe
         this.hitChecked = false;
+        this.hitSound = new Audio('sounds/hit2.mp3'); // Load axe hit sound
+        this.hitSound.volume = 0.3; // Set volume to 30%
     }
     
     getDuration() {
@@ -516,9 +518,7 @@ class AxeAttack extends Attack {
                 const destroyed = ore.hit(damage);
                 
                 // Play hit sound
-                if (this.playHitSound) {
-                    this.playHitSound();
-                }
+                this.playHitSound();
                 
                 // Generate particles
                 const particles = ore.generateParticles();
@@ -624,6 +624,21 @@ class AxeAttack extends Attack {
         }
         
         return hitOres;
+    }
+    
+    // Add playHitSound method for AxeAttack
+    playHitSound() {
+        // Clone the sound to allow multiple overlapping sounds
+        const sound = this.hitSound.cloneNode();
+        
+        // Add some pitch variation
+        sound.playbackRate = 0.9 + Math.random() * 0.2;
+        
+        // Play the sound
+        sound.play().catch(err => {
+            // Handle autoplay restrictions
+            console.log('Sound play failed:', err);
+        });
     }
 }
 
