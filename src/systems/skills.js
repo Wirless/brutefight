@@ -167,6 +167,39 @@ export class SkillsManager {
                 // Add more skills here as needed
             };
         }
+
+        /*
+
+        
+// If there's a SKILLS array or object, add woodcutting to it
+if (typeof SKILLS !== 'undefined') {
+    // Add woodcutting skill if it doesn't exist already
+    const hasWoodcutting = SKILLS.some(skill => skill.id === 'woodcutting' || skill.name === 'Woodcutting');
+    
+    if (!hasWoodcutting) {
+        SKILLS.push({
+            id: 'woodcutting',
+            name: 'Woodcutting',
+            description: 'Ability to chop trees more efficiently',
+            type: 'gathering',
+            icon: '🪓',
+            baseExperience: 100,
+            effects: [
+                { level: 1, description: 'Can chop basic trees' },
+                { level: 5, description: '+10% woodcutting speed' },
+                { level: 10, description: '+20% woodcutting speed' },
+                { level: 15, description: '+10% wood yield' },
+                { level: 20, description: '+30% woodcutting speed' },
+                { level: 25, description: '+20% wood yield' },
+                { level: 30, description: '+40% woodcutting speed' },
+                { level: 40, description: '+30% wood yield' },
+                { level: 50, description: '+50% woodcutting speed and +40% yield' }
+            ]
+        });
+    }
+}
+
+*/
         
         // Create UI
         this.createUI();
@@ -772,6 +805,19 @@ export class SkillsManager {
         
         // Add a tooltip to indicate draggable
         dragHandle.title = 'Drag to move window';
+    }
+
+    /**
+     * Get skill information
+     * @param {string} skillName - Name of the skill
+     * @returns {Object|null} - The skill object or null if not found
+     */
+    getSkill(skillName) {
+        if (!this.player || !this.player.skills || !this.player.skills[skillName]) {
+            return null;
+        }
+        
+        return this.player.skills[skillName];
     }
 }
 

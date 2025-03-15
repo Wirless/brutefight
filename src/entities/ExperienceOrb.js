@@ -16,11 +16,17 @@ class ExperienceOrb {
         this.value = options.value || 5;
         
         // Appearance
-        this.size = Math.max(5, Math.min(15, Math.sqrt(this.value) * 2));
+        // Make 1 XP orbs smaller to emphasize growth when merging
+        if (this.value <= 1) {
+            this.size = Math.max(3, Math.min(5, Math.sqrt(this.value) * 2));
+        } else {
+            this.size = Math.max(5, Math.min(15, Math.sqrt(this.value) * 2));
+        }
         this.baseColor = options.color || '#3498db';
         this.glowColor = options.glowColor || '#85c0f9';
         this.pulseSpeed = options.pulseSpeed || 0.003;
         this.rotationSpeed = options.rotationSpeed || 0.001;
+        this.renderStyle = options.renderStyle || 'modern'; // 'modern' or 'classic'
         
         // Physics
         this.vx = options.vx || 0;
@@ -47,6 +53,24 @@ class ExperienceOrb {
         this.rotation = Math.random() * Math.PI * 2;
         this.scale = 1.0;
         this.alpha = 1.0;
+        
+        // Fuzzy particles
+        this.fuzzyParticles = [];
+        this.fuzzyParticleCount = options.fuzzyParticleCount || Math.floor(5 + (this.value / 10));
+        this.lastFuzzyParticleTime = Date.now();
+        this.fuzzyParticleInterval = options.fuzzyParticleInterval || 100;
+        this.fuzzyParticlesEnabled = options.fuzzyParticlesEnabled !== undefined ? options.fuzzyParticlesEnabled : true;
+        this.initFuzzyParticles();
+        
+        // Classic style properties
+        if (this.renderStyle === 'classic') {
+            const greenIntensity = Math.min(255, 200 + (this.value * 5));
+            this.baseColor = `rgb(0, ${greenIntensity}, 100)`;
+            this.glowColor = `rgba(0, 255, 100, 0.5)`;
+            this.particles = [];
+            this.lastParticleTime = 0;
+            this.particleInterval = 100 + Math.random() * 100;
+        }
         
         // Generate initial velocity in random direction
         if (options.randomVelocity !== false) {
@@ -75,6 +99,12 @@ class ExperienceOrb {
             // Animate collection
             this.scale = 1 - collectProgress;
             this.alpha = 1 - collectProgress;
+            
+            // If using classic style, create particles on collection
+            if (this.renderStyle === 'classic' && this.particles) {
+                this.createCollectionParticles();
+            }
+            
             return false;
         }
         
@@ -101,6 +131,14 @@ class ExperienceOrb {
         
         // Update animation
         this.updateAnimation(deltaTime);
+        
+        // Update classic style particles if needed
+        if (this.renderStyle === 'classic' && this.particles) {
+            this.updateClassicParticles(deltaTime);
+        }
+        
+        // Update fuzzy particles
+        this.updateFuzzyParticles(deltaTime);
         
         return false; // Not ready to be removed
     }
@@ -266,6 +304,23 @@ class ExperienceOrb {
             return;
         }
         
+        if (this.renderStyle === 'classic') {
+            this.drawClassicStyle(ctx, screenX, screenY);
+        } else {
+            this.drawModernStyle(ctx, screenX, screenY);
+        }
+        
+        // Draw fuzzy particles
+        this.drawFuzzyParticles(ctx, screenX, screenY);
+    }
+    
+    /**
+     * Draw the orb with modern style
+     * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {number} screenX - Screen X position
+     * @param {number} screenY - Screen Y position
+     */
+    drawModernStyle(ctx, screenX, screenY) {
         // Save context state
         ctx.save();
         
@@ -337,6 +392,306 @@ class ExperienceOrb {
             ctx.shadowOffsetY = 0;
         }
     }
+    
+    /**
+     * Draw the orb with classic style (old visual appearance)
+     * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {number} screenX - Screen X position
+     * @param {number} screenY - Screen Y position
+     */
+    drawClassicStyle(ctx, screenX, screenY) {
+        // Draw trail particles
+        if (this.particles) {
+            for (const particle of this.particles) {
+                const particleScreenX = particle.x - Math.floor(this.x - screenX);
+                const particleScreenY = particle.y - Math.floor(this.y - screenY);
+                
+                ctx.globalAlpha = particle.opacity * 0.7;
+                ctx.fillStyle = particle.color;
+                ctx.beginPath();
+                ctx.arc(particleScreenX, particleScreenY, particle.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        // Reset alpha
+        ctx.globalAlpha = this.alpha;
+        
+        // Draw glow
+        ctx.beginPath();
+        const glowSize = this.size * 0.6;
+        ctx.arc(screenX, screenY, this.size + glowSize, 0, Math.PI * 2);
+        const gradient = ctx.createRadialGradient(
+            screenX, screenY, this.size,
+            screenX, screenY, this.size + glowSize
+        );
+        gradient.addColorStop(0, `rgba(0, 255, 100, ${this.alpha})`);
+        gradient.addColorStop(1, 'rgba(0, 255, 100, 0)');
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+        // Draw orb
+        ctx.fillStyle = this.baseColor;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add highlight
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.beginPath();
+        ctx.arc(screenX - this.size * 0.3, screenY - this.size * 0.3, this.size * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw XP value text if significant
+        if (this.value >= 10) {
+            ctx.fillStyle = 'white';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Add shadow to make text readable
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+            ctx.shadowBlur = 3;
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 1;
+            
+            ctx.fillText(`+${this.value}`, screenX, screenY - this.size - 10);
+            
+            // Reset shadow
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+        }
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+    
+    /**
+     * Update classic style particles
+     * @param {number} deltaTime - Time elapsed since last update
+     */
+    updateClassicParticles(deltaTime) {
+        // Create trail particles occasionally
+        const now = Date.now();
+        if (now - this.lastParticleTime > this.particleInterval) {
+            this.createTrailParticle();
+            this.lastParticleTime = now;
+        }
+        
+        // Update existing particles
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const particle = this.particles[i];
+            particle.life -= deltaTime;
+            
+            if (particle.life <= 0) {
+                this.particles.splice(i, 1);
+                continue;
+            }
+            
+            // Move particle
+            particle.x += particle.vx * (deltaTime / 16);
+            particle.y += particle.vy * (deltaTime / 16);
+            
+            // Fade out
+            particle.opacity = particle.life / particle.maxLife;
+        }
+    }
+    
+    /**
+     * Create a trail particle for classic style
+     */
+    createTrailParticle() {
+        this.particles.push({
+            x: this.x,
+            y: this.y,
+            vx: (Math.random() - 0.5) * 0.5,
+            vy: (Math.random() - 0.5) * 0.5,
+            radius: 1 + Math.random() * 2,
+            color: 'rgb(0, 255, 100)',
+            opacity: 0.7,
+            life: 300 + Math.random() * 200,
+            maxLife: 500
+        });
+    }
+    
+    /**
+     * Create particle burst on collection for classic style
+     */
+    createCollectionParticles() {
+        // Create particle burst when collected
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            this.particles.push({
+                x: this.x,
+                y: this.y,
+                vx: Math.cos(angle) * 2,
+                vy: Math.sin(angle) * 2,
+                radius: 2 + Math.random() * 2,
+                color: 'rgb(0, 255, 100)',
+                opacity: 1,
+                life: 300 + Math.random() * 200,
+                maxLife: 500
+            });
+        }
+    }
+    
+    /**
+     * Initialize fuzzy particles
+     */
+    initFuzzyParticles() {
+        if (!this.fuzzyParticlesEnabled) return;
+        
+        // Create initial particles
+        for (let i = 0; i < this.fuzzyParticleCount; i++) {
+            this.createFuzzyParticle();
+        }
+    }
+    
+    /**
+     * Create a new fuzzy particle
+     */
+    createFuzzyParticle() {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = this.size * (0.5 + Math.random() * 1.5);
+        
+        // Create with random offset from orb center
+        const particle = {
+            offsetX: Math.cos(angle) * distance,
+            offsetY: Math.sin(angle) * distance,
+            size: 0.5 + Math.random() * 1.5,
+            alpha: 0.3 + Math.random() * 0.4,
+            speed: 0.05 + Math.random() * 0.1,
+            angle: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * 0.02,
+            pulseSpeed: 0.002 + Math.random() * 0.003,
+            pulseAmount: 0.1 + Math.random() * 0.2,
+            startTime: Date.now(),
+            lifetime: 1000 + Math.random() * 2000
+        };
+        
+        // Add color based on orb style
+        if (this.renderStyle === 'classic') {
+            const green = Math.min(255, Math.floor(200 + Math.random() * 55));
+            particle.color = `rgba(100, ${green}, 120, ${particle.alpha})`;
+        } else {
+            // For modern style, derive from the orb's base color
+            const baseColor = this.baseColor.startsWith('#') ? 
+                this.baseColor : 
+                this.baseColor || '#3498db';
+                
+            // Slightly vary the particle color from the base
+            const r = parseInt(baseColor.substring(1, 3), 16);
+            const g = parseInt(baseColor.substring(3, 5), 16);
+            const b = parseInt(baseColor.substring(5, 7), 16);
+            
+            const variance = 30; // Color variance
+            const newR = Math.min(255, Math.max(0, r + (Math.random() - 0.5) * variance));
+            const newG = Math.min(255, Math.max(0, g + (Math.random() - 0.5) * variance));
+            const newB = Math.min(255, Math.max(0, b + (Math.random() - 0.5) * variance));
+            
+            particle.color = `rgba(${Math.floor(newR)}, ${Math.floor(newG)}, ${Math.floor(newB)}, ${particle.alpha})`;
+        }
+        
+        this.fuzzyParticles.push(particle);
+    }
+    
+    /**
+     * Update fuzzy particles
+     * @param {number} deltaTime - Time elapsed since last update
+     */
+    updateFuzzyParticles(deltaTime) {
+        if (!this.fuzzyParticlesEnabled) return;
+        
+        const now = Date.now();
+        
+        // Create new particles occasionally
+        if (now - this.lastFuzzyParticleTime > this.fuzzyParticleInterval) {
+            this.createFuzzyParticle();
+            this.lastFuzzyParticleTime = now;
+        }
+        
+        // Update existing particles
+        for (let i = this.fuzzyParticles.length - 1; i >= 0; i--) {
+            const particle = this.fuzzyParticles[i];
+            
+            // Check for particle expiration
+            if (now - particle.startTime > particle.lifetime) {
+                this.fuzzyParticles.splice(i, 1);
+                continue;
+            }
+            
+            // Update particle position (orbit-like motion)
+            particle.angle += particle.rotationSpeed * deltaTime;
+            
+            // Calculate pulse effect
+            const pulseTime = now * particle.pulseSpeed;
+            const pulse = Math.sin(pulseTime) * particle.pulseAmount;
+            
+            // Update position based on angle and distance
+            const distance = this.size * (0.8 + pulse);
+            particle.offsetX = Math.cos(particle.angle) * distance;
+            particle.offsetY = Math.sin(particle.angle) * distance;
+            
+            // Update alpha based on lifetime
+            const lifeProgress = (now - particle.startTime) / particle.lifetime;
+            if (lifeProgress > 0.7) {
+                // Fade out near end of life
+                particle.alpha = 0.7 * (1 - ((lifeProgress - 0.7) / 0.3));
+            }
+        }
+    }
+    
+    /**
+     * Draw fuzzy particles
+     * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {number} screenX - Screen X position
+     * @param {number} screenY - Screen Y position
+     */
+    drawFuzzyParticles(ctx, screenX, screenY) {
+        if (!this.fuzzyParticlesEnabled || this.fuzzyParticles.length === 0) return;
+        
+        for (const particle of this.fuzzyParticles) {
+            const particleX = screenX + particle.offsetX;
+            const particleY = screenY + particle.offsetY;
+            
+            ctx.globalAlpha = particle.alpha * this.alpha; // Apply orb alpha to particles
+            ctx.fillStyle = particle.color;
+            
+            // Draw the particle
+            ctx.beginPath();
+            ctx.arc(particleX, particleY, particle.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+    
+    /**
+     * Set whether fuzzy particles are enabled
+     * @param {boolean} enabled - Whether fuzzy particles should be enabled
+     */
+    setFuzzyParticlesEnabled(enabled) {
+        // Update the setting for new orbs
+        this.fuzzyParticlesEnabled = enabled;
+        
+        // Update existing orbs
+        for (const orb of this.orbs) {
+            orb.fuzzyParticlesEnabled = enabled;
+            
+            // Initialize particles if they're now enabled and don't exist yet
+            if (enabled && (!orb.fuzzyParticles || orb.fuzzyParticles.length === 0)) {
+                orb.fuzzyParticles = [];
+                orb.lastFuzzyParticleTime = Date.now();
+                orb.fuzzyParticleCount = Math.floor(5 + (orb.value / 10));
+                orb.initFuzzyParticles();
+            }
+        }
+        
+        console.log(`Experience orb fuzzy particles ${enabled ? 'enabled' : 'disabled'}`);
+    }
 }
 
 /**
@@ -347,10 +702,14 @@ class ExperienceOrb {
 class ExperienceOrbManager {
     /**
      * @param {Game} game - The main game instance
+     * @param {Object} options - Manager options
      */
-    constructor(game) {
+    constructor(game, options = {}) {
         this.game = game;
         this.orbs = [];
+        
+        // Visual style options
+        this.defaultRenderStyle = options.renderStyle || 'modern'; // 'modern' or 'classic'
         
         // Make globally available
         window.expOrbManager = this;
@@ -377,11 +736,42 @@ class ExperienceOrbManager {
             x: x,
             y: y,
             value: value,
+            renderStyle: options.renderStyle || this.defaultRenderStyle,
             ...options
         });
         
         this.orbs.push(orb);
         return orb;
+    }
+    
+    /**
+     * Toggle the visual style of all orbs
+     * @param {string} style - 'modern' or 'classic'
+     */
+    setVisualStyle(style) {
+        if (style !== 'modern' && style !== 'classic') {
+            console.error(`Invalid style: ${style}. Must be 'modern' or 'classic'`);
+            return;
+        }
+        
+        this.defaultRenderStyle = style;
+        
+        // Update existing orbs
+        for (const orb of this.orbs) {
+            orb.renderStyle = style;
+            
+            // Initialize classic style properties if needed
+            if (style === 'classic' && !orb.particles) {
+                const greenIntensity = Math.min(255, 200 + (orb.value * 5));
+                orb.baseColor = `rgb(0, ${greenIntensity}, 100)`;
+                orb.glowColor = `rgba(0, 255, 100, 0.5)`;
+                orb.particles = [];
+                orb.lastParticleTime = 0;
+                orb.particleInterval = 100 + Math.random() * 100;
+            }
+        }
+        
+        console.log(`Experience orb visual style set to: ${style}`);
     }
     
     /**
@@ -396,34 +786,27 @@ class ExperienceOrbManager {
     createExpOrbBurst(x, y, totalValue, count = 3, options = {}) {
         const orbs = [];
         
-        // Calculate value per orb (with a minimum)
-        const minValue = 1;
-        let remainingValue = totalValue;
-        let remainingCount = count;
+        // Create one orb per experience point
+        const orbCount = Math.max(1, totalValue);
         
-        for (let i = 0; i < count; i++) {
-            // For the last orb, use all remaining value
-            let orbValue = (i === count - 1) 
-                ? remainingValue 
-                : Math.max(minValue, Math.floor(remainingValue / remainingCount));
-            
-            // Create orb with random offset
+        for (let i = 0; i < orbCount; i++) {
+            // Create orb with random offset in a burst pattern
             const angle = Math.random() * Math.PI * 2;
-            const distance = 5 + Math.random() * 15;
+            const distance = 5 + Math.random() * 20;
             const orbX = x + Math.cos(angle) * distance;
             const orbY = y + Math.sin(angle) * distance;
             
-            // Create with random initial velocity
-            const orb = this.createExpOrb(orbX, orbY, orbValue, {
+            // Create with 1 XP and random initial velocity
+            const orb = this.createExpOrb(orbX, orbY, 1, {
                 randomVelocity: true,
                 ...options
             });
             
-            orbs.push(orb);
+            // Add some initial velocity for the burst effect
+            orb.vx = Math.cos(angle) * (1 + Math.random() * 2);
+            orb.vy = Math.sin(angle) * (1 + Math.random() * 2);
             
-            // Update remaining value and count
-            remainingValue -= orbValue;
-            remainingCount--;
+            orbs.push(orb);
         }
         
         return orbs;
@@ -435,6 +818,12 @@ class ExperienceOrbManager {
      */
     update(deltaTime) {
         const players = this.game.playerManager ? this.game.playerManager.getPlayers() : [];
+        
+        // Merge nearby orbs before updating them
+        // Try to use the mergeExperienceOrbs function if available
+        if (window.ExperienceOrbManager && window.ExperienceOrbManager.mergeExperienceOrbs) {
+            this.orbs = window.ExperienceOrbManager.mergeExperienceOrbs(this.orbs);
+        }
         
         // Update all orbs
         for (let i = this.orbs.length - 1; i >= 0; i--) {

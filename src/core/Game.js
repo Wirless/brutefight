@@ -97,6 +97,34 @@ class Game {
             return false;
         };
 
+        // Load tree classes if not already loaded
+        try {
+            if (!window.Tree || !window.Trees) {
+                import('../entities/Tree.js').then(module => {
+                    console.log("Successfully imported Tree.js module");
+                    // These should already be set by the module, but let's ensure they're available
+                    window.Tree = module.Tree || module.default;
+                    window.OakTree = module.OakTree;
+                    window.BirchTree = module.BirchTree;
+                    window.PineTree = module.PineTree;
+                    window.JungleTree = module.JungleTree;
+
+                    if (!window.Trees) {
+                        window.Trees = {
+                            oak: (x, y) => new window.OakTree(x, y),
+                            birch: (x, y) => new window.BirchTree(x, y),
+                            pine: (x, y) => new window.PineTree(x, y),
+                            jungle: (x, y) => new window.JungleTree(x, y)
+                        };
+                    }
+                }).catch(error => {
+                    console.error("Failed to import Tree.js module:", error);
+                });
+            }
+        } catch (error) {
+            console.error("Error loading tree classes:", error);
+        }
+
         // Initialize sounds if Web Audio API is available
         try {
             window.audioEnabled = true;
@@ -134,6 +162,12 @@ class Game {
         
         // Initialize the world
         this.initWorld();
+
+        // Load tree system if available in systems module
+        if (window.systems && window.systems.TreeSystem) {
+            console.log("Loading TreeSystem from systems module");
+            window.TreeSystem = window.systems.TreeSystem;
+        }
 
         return this;
     }
@@ -347,7 +381,25 @@ class Game {
         try {
             // Create managers
             if (window.OreManager) {
-                this.oreManager = new window.OreManager().init();
+                try {
+                    this.oreManager = new window.OreManager(this);
+                    if (this.oreManager && typeof this.oreManager.init === 'function') {
+                        this.oreManager = this.oreManager.init();
+                    }
+                    
+                    // Verify oreManager has necessary methods
+                    if (!this.oreManager || typeof this.oreManager.update !== 'function') {
+                        console.error("OreManager missing required methods");
+                        // Create a fallback update method if missing
+                        if (this.oreManager && typeof this.oreManager.update !== 'function') {
+                            this.oreManager.update = function(deltaTime) {
+                                console.log("Using fallback OreManager update method");
+                            };
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error initializing OreManager:", err);
+                }
             } else {
                 console.error("OreManager not found");
             }
@@ -405,17 +457,10 @@ class Game {
                 }
             }
             
-            // Initialize skills manager
-            try {
-                if (window.SkillsManager) {
-                    this.skillsManager = new window.SkillsManager(this.myPlayer);
-                    window.skillsManager = this.skillsManager;
-                    console.log("SkillsManager initialized");
-                } else {
-                    console.error("SkillsManager not found");
-                }
-            } catch (error) {
-                console.error("Error initializing SkillsManager:", error);
+            // Initialize SkillsManager
+            if (!this.skillsManager && window.SkillsManager) {
+                this.skillsManager = new window.SkillsManager(this.myPlayer);
+                window.skillsManager = this.skillsManager;
             }
             
             // Make managers globally available if needed
@@ -438,6 +483,123 @@ class Game {
             
             // Initialize attack system
             this.initAttackSystem();
+
+            // Initialize tree system
+            if (window.TreeSystem) {
+                this.treeSystem = new window.TreeSystem(this);
+                this.treeSystem.init();
+            } else {
+                console.warn("TreeSystem not available, trees will not be visible");
+            }
+            
+            // Update ore manager initially
+            if (this.oreManager) {
+                this.oreManager.update(0);
+            }
+            
+            // Make tree system globally available
+            if (this.treeSystem) {
+                window.treeSystem = this.treeSystem;
+            }
+            
+            // Add debug console command to spawn trees
+            window.spawnTree = (type, count = 1) => {
+                if (!this.treeSystem) {
+                    console.error("Tree system not available");
+                    return;
+                }
+                
+                const validTypes = ['oak', 'birch', 'pine', 'jungle'];
+                const treeType = validTypes.includes(type) ? type : validTypes[Math.floor(Math.random() * validTypes.length)];
+                
+                console.log(`Spawning ${count} ${treeType} trees near player`);
+                
+                for (let i = 0; i < count; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 50 + Math.random() * 150;
+                    const x = this.myPlayer.x + Math.cos(angle) * distance;
+                    const y = this.myPlayer.y + Math.sin(angle) * distance;
+                    
+                    this.treeSystem.createTree(treeType, x, y);
+                }
+                
+                return `Spawned ${count} ${treeType} trees`;
+            };
+
+            // Add test command to check tree system status
+            window.checkTrees = () => {
+                console.log({
+                    treeSystemExists: !!this.treeSystem,
+                    treeManagerExists: this.treeSystem ? !!this.treeSystem.treeManager : false,
+                    treesCount: this.treeSystem && this.treeSystem.treeManager ? this.treeSystem.treeManager.trees.length : 0,
+                    treeTypes: window.Trees ? Object.keys(window.Trees) : [],
+                    treeClasses: {
+                        Tree: !!window.Tree,
+                        OakTree: !!window.OakTree,
+                        BirchTree: !!window.BirchTree,
+                        PineTree: !!window.PineTree,
+                        JungleTree: !!window.JungleTree
+                    }
+                });
+                
+                // Force spawn a tree for testing
+                if (this.treeSystem && this.treeSystem.treeManager) {
+                    const x = this.myPlayer.x;
+                    const y = this.myPlayer.y + 50;
+                    const tree = this.treeSystem.createTree('oak', x, y);
+                    console.log("Test tree created:", tree);
+                    return "Test tree created in front of player";
+                } else {
+                    return "Tree system not properly initialized";
+                }
+            };
+
+            // Add diagnostic function to check system status
+            window.diagnoseGameSystems = () => {
+                console.group("Game Systems Diagnostic");
+                
+                // Check Tree System
+                console.group("Tree System");
+                console.log("TreeSystem global:", !!window.TreeSystem);
+                console.log("TreeSystem instance:", !!this.treeSystem);
+                console.log("TreeManager instance:", this.treeSystem ? !!this.treeSystem.treeManager : false);
+                console.log("Tree classes:", {
+                    Tree: !!window.Tree,
+                    OakTree: !!window.OakTree,
+                    BirchTree: !!window.BirchTree,
+                    PineTree: !!window.PineTree,
+                    JungleTree: !!window.JungleTree
+                });
+                if (this.treeSystem && this.treeSystem.treeManager) {
+                    console.log("Trees count:", this.treeSystem.treeManager.trees.length);
+                    console.log("Trees:", this.treeSystem.treeManager.trees);
+                }
+                console.groupEnd();
+                
+                // Check Ore System
+                console.group("Ore System");
+                console.log("OreManager global:", !!window.OreManager);
+                console.log("OreManager instance:", !!this.oreManager);
+                console.log("Ores global array:", !!window.ores);
+                if (this.oreManager) {
+                    const methods = {
+                        getOres: typeof this.oreManager.getOres === 'function',
+                        update: typeof this.oreManager.update === 'function',
+                        drawOres: typeof this.oreManager.drawOres === 'function'
+                    };
+                    console.log("OreManager methods:", methods);
+                    
+                    if (methods.getOres) {
+                        const ores = this.oreManager.getOres();
+                        console.log("Ores count:", ores ? ores.length : 0);
+                    }
+                }
+                console.groupEnd();
+                
+                console.groupEnd();
+                
+                return "Diagnostic complete - check console for results";
+            };
         } catch (error) {
             console.error("Error initializing managers:", error);
         }
@@ -476,6 +638,92 @@ class Game {
             this.myPlayer.y
         );
         console.log(`Generated ${initialOres.length} initial ores`);
+        
+        // Generate initial trees
+        if (this.treeSystem) {
+            console.log("Manually triggering initial tree generation");
+            // Force tree generation close to player
+            const initialTreeCount = 15;
+            for (let i = 0; i < initialTreeCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 100 + Math.random() * 300; // 100-400 units from player
+                const x = this.myPlayer.x + Math.cos(angle) * distance;
+                const y = this.myPlayer.y + Math.sin(angle) * distance;
+                const treeType = ['oak', 'birch', 'pine', 'jungle'][Math.floor(Math.random() * 4)];
+                
+                // Create tree
+                this.treeSystem.createTree(treeType, x, y);
+            }
+            console.log(`Manually generated ${initialTreeCount} trees around player`);
+        }
+        
+        // Setup experience orb style toggle in settings
+        if (this.experienceOrbManager) {
+            // Add setting to toggle between modern and classic experience orb visuals
+            if (window.settings && typeof window.settings.addSetting === 'function') {
+                window.settings.addSetting({
+                    id: 'expOrbStyle',
+                    name: 'Experience Orb Style',
+                    type: 'select',
+                    options: [
+                        { value: 'modern', label: 'Modern' },
+                        { value: 'classic', label: 'Classic' }
+                    ],
+                    defaultValue: 'modern',
+                    onChange: (value) => {
+                        this.experienceOrbManager.setVisualStyle(value);
+                    }
+                });
+                
+                // Add setting to toggle fuzzy particles
+                window.settings.addSetting({
+                    id: 'expOrbParticles',
+                    name: 'Experience Orb Particles',
+                    type: 'checkbox',
+                    defaultValue: true,
+                    onChange: (value) => {
+                        // Toggle fuzzy particles if the manager has the method
+                        if (this.experienceOrbManager.setFuzzyParticlesEnabled) {
+                            this.experienceOrbManager.setFuzzyParticlesEnabled(value);
+                        }
+                        
+                        // Also update the config if using the other implementation
+                        if (window.ExperienceOrbs && window.ExperienceOrbs.XP_ORB_CONFIG) {
+                            window.ExperienceOrbs.XP_ORB_CONFIG.fuzzyParticlesEnabled = value;
+                        }
+                    }
+                });
+            }
+            
+            // Add console command for debugging
+            if (window.consoleCommands) {
+                window.consoleCommands.register('expOrbStyle', (style) => {
+                    if (!style || (style !== 'modern' && style !== 'classic')) {
+                        console.log('Usage: expOrbStyle [modern|classic]');
+                        return;
+                    }
+                    this.experienceOrbManager.setVisualStyle(style);
+                    return `Experience orb visual style set to: ${style}`;
+                }, 'Toggle experience orb visual style (modern/classic)');
+                
+                // Add command to toggle fuzzy particles
+                window.consoleCommands.register('expOrbParticles', (enabled) => {
+                    const boolValue = enabled === 'true' || enabled === '1' || enabled === 'on';
+                    
+                    // Toggle in the manager if method exists
+                    if (this.experienceOrbManager.setFuzzyParticlesEnabled) {
+                        this.experienceOrbManager.setFuzzyParticlesEnabled(boolValue);
+                    }
+                    
+                    // Also update the config if using the other implementation
+                    if (window.ExperienceOrbs && window.ExperienceOrbs.XP_ORB_CONFIG) {
+                        window.ExperienceOrbs.XP_ORB_CONFIG.fuzzyParticlesEnabled = boolValue;
+                    }
+                    
+                    return `Experience orb particles ${boolValue ? 'enabled' : 'disabled'}`;
+                }, 'Toggle experience orb fuzzy particles (on/off)');
+            }
+        }
     }
 
     /**
@@ -791,6 +1039,11 @@ class Game {
             this.velocity.x /= length;
             this.velocity.y /= length;
         }
+        
+        // Update tree system
+        if (this.treeSystem) {
+            this.treeSystem.update(this.deltaTime);
+        }
     }
 
     /**
@@ -949,11 +1202,23 @@ class Game {
             this.serverUpdateInterval = 0;
         }
         
-        // Render game
+        // Update tree system
+        if (this.treeSystem) {
+            this.treeSystem.update(deltaTime);
+        }
+        
+        // Update debug info periodically
+        if (this.debug && timestamp % 500 < 16) {
+            this.updateDebugInfo();
+        }
+        
+        // Render the game
         this.render();
         
-        // Schedule the next frame
-        requestAnimationFrame(this.gameLoop);
+        // Continue the game loop
+        if (this.running) {
+            requestAnimationFrame(this.gameLoop);
+        }
     }
 
     /**
@@ -980,27 +1245,38 @@ class Game {
             const newX = this.myPlayer.x + this.velocity.x * moveDistance;
             const newY = this.myPlayer.y + this.velocity.y * moveDistance;
             
-            // Check for ore collisions
+            // Check for collisions with both ores and trees
             const PLAYER_COLLISION_RADIUS = 10;
-            if (!this.checkOreCollisions(newX, newY)) {
+            const hasOreCollision = this.checkOreCollisions(newX, newY);
+            const hasTreeCollision = this.checkTreeCollisions(newX, newY);
+            
+            if (!hasOreCollision && !hasTreeCollision) {
                 // No collision, update position
                 this.myPlayer.x = newX;
                 this.myPlayer.y = newY;
             } else {
                 // Try moving only in X direction
-                if (!this.checkOreCollisions(newX, oldY)) {
+                const hasXOreCollision = this.checkOreCollisions(newX, oldY);
+                const hasXTreeCollision = this.checkTreeCollisions(newX, oldY);
+                
+                if (!hasXOreCollision && !hasXTreeCollision) {
                     this.myPlayer.x = newX;
                 }
                 // Try moving only in Y direction
-                else if (!this.checkOreCollisions(oldX, newY)) {
-                    this.myPlayer.y = newY;
-                }
-                // If both directions cause collisions, check if we need to push the player
                 else {
-                    const newPosition = this.oreManager.handlePlayerCollision(oldX, oldY, PLAYER_COLLISION_RADIUS);
-                    if (newPosition) {
-                        this.myPlayer.x = newPosition.x;
-                        this.myPlayer.y = newPosition.y;
+                    const hasYOreCollision = this.checkOreCollisions(oldX, newY);
+                    const hasYTreeCollision = this.checkTreeCollisions(oldX, newY);
+                    
+                    if (!hasYOreCollision && !hasYTreeCollision) {
+                        this.myPlayer.y = newY;
+                    }
+                    // If both directions cause collisions, check if we need to push the player
+                    else if (hasOreCollision) {
+                        const newPosition = this.oreManager.handlePlayerCollision(oldX, oldY, PLAYER_COLLISION_RADIUS);
+                        if (newPosition) {
+                            this.myPlayer.x = newPosition.x;
+                            this.myPlayer.y = newPosition.y;
+                        }
                     }
                 }
             }
@@ -1023,7 +1299,34 @@ class Game {
      */
     checkOreCollisions(playerX, playerY) {
         const PLAYER_COLLISION_RADIUS = 10;
-        return this.oreManager.checkCollision(playerX, playerY, PLAYER_COLLISION_RADIUS);
+        return this.oreManager && this.oreManager.checkCollision(playerX, playerY, PLAYER_COLLISION_RADIUS);
+    }
+    
+    /**
+     * Check for collisions with trees
+     * @param {number} playerX - Player X position
+     * @param {number} playerY - Player Y position
+     * @returns {boolean} - Whether collision occurred
+     */
+    checkTreeCollisions(playerX, playerY) {
+        if (!this.treeSystem) return false;
+        
+        const PLAYER_COLLISION_RADIUS = 15;
+        const nearbyTrees = this.treeSystem.getTreesInRadius(playerX, playerY, PLAYER_COLLISION_RADIUS + 30);
+        
+        for (const tree of nearbyTrees) {
+            if (tree.chopped) continue;
+            
+            // Check if player is colliding with tree trunk (simpler collision check)
+            if (playerX + PLAYER_COLLISION_RADIUS > tree.x - tree.trunkWidth/2 &&
+                playerX - PLAYER_COLLISION_RADIUS < tree.x + tree.trunkWidth/2 &&
+                playerY + PLAYER_COLLISION_RADIUS > tree.y &&
+                playerY - PLAYER_COLLISION_RADIUS < tree.y + tree.trunkHeight) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     /**
@@ -1302,6 +1605,11 @@ class Game {
         // Draw ores
         if (this.oreManager && this.oreManager.drawOres) {
             this.oreManager.drawOres(this.ctx, this.cameraX, this.cameraY);
+        }
+        
+        // Draw trees
+        if (this.treeSystem) {
+            this.treeSystem.draw(this.ctx, this.cameraX, this.cameraY);
         }
         
         // Render particles

@@ -10,6 +10,8 @@ import Attacks from './attacks.js';
 import CombatSystem from './CombatSystem.js';
 import experienceOrbs from './experienceOrbs.js';
 import ores from './ores.js';
+import TreeSystem from './trees.js';
+
 
 export {
     skills,
@@ -17,5 +19,6 @@ export {
     Attacks,
     CombatSystem,
     experienceOrbs,
-    ores
+    ores,
+    TreeSystem
 }; 

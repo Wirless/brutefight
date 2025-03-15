@@ -8,6 +8,8 @@ import Ore, { StoneOre, CopperOre, IronOre, GoldOre, DiamondOre } from './Ore.js
 import ExperienceOrb from './ExperienceOrb.js';
 import Item from './Item.js';
 import Player from './Player.js';
+import Tree from './Tree.js';
+
 
 // Re-export all entities
 export { 
@@ -19,7 +21,8 @@ export {
     DiamondOre,
     ExperienceOrb,
     Item,
-    Player
+    Player,
+    Tree
 };
 
 // Default export for backward compatibility
@@ -32,5 +35,6 @@ export default {
     DiamondOre,
     ExperienceOrb,
     Item,
-    Player
+    Player,
+    Tree
 }; 

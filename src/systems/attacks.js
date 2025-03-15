@@ -505,44 +505,31 @@ class PickaxeAttack extends Attack {
     
     createExperienceOrbs(ore, drops) {
         try {
-            // Get the experience amount from drops, or use default value
             const expAmount = drops && drops.experience ? drops.experience : 10;
             
-            // Create a fixed number of orbs (3-5) regardless of rock size
-            const orbCount = 3 + Math.floor(Math.random() * 3); // Random between 3 and 5
-            
-            console.log(`Rock destroyed! Experience: ${expAmount}, Creating ${orbCount} orbs`);
+            // Create one orb per experience point, instead of combining them
+            // This will allow them to merge naturally when they get close to each other
+            console.log(`Rock destroyed! Creating ${expAmount} individual experience orbs`);
             
             // Create orbs using ExperienceOrbManager
             if (window.expOrbManager) {
-                // Try to use the createOrbBurst method first for a proper burst effect
-                if (window.expOrbManager.createOrbBurst) {
-                    window.expOrbManager.createOrbBurst(ore.x, ore.y, orbCount, expAmount);
-                } 
-                // Otherwise, create individual orbs in a burst pattern
-                else if (window.expOrbManager.createOrb) {
-                    for (let j = 0; j < orbCount; j++) {
+                // Create individual orbs in a burst pattern
+                if (window.expOrbManager.createOrb) {
+                    for (let j = 0; j < expAmount; j++) {
                         // Random position around the ore
                         const angle = Math.random() * Math.PI * 2;
                         const distance = 10 + Math.random() * 20;
                         const orbX = ore.x + Math.cos(angle) * distance;
                         const orbY = ore.y + Math.sin(angle) * distance;
                         
-                        // Distribute XP among orbs, with some variation
-                        // Make first orb larger (40-60% of total)
-                        let orbXp;
-                        if (j === 0 && orbCount > 1) {
-                            orbXp = Math.ceil(expAmount * (0.4 + Math.random() * 0.2));
-                        } else {
-                            // Distribute remaining XP somewhat randomly
-                            const remaining = expAmount - (j === 0 ? orbXp : 0);
-                            orbXp = Math.max(1, Math.ceil(remaining / (orbCount - j) * (0.5 + Math.random())));
-                        }
-                        
-                        window.expOrbManager.createOrb(orbX, orbY, orbXp);
+                        // Each orb is worth 1 XP
+                        window.expOrbManager.createOrb(orbX, orbY, 1);
                     }
+                } else if (window.expOrbManager.createOrbBurst) {
+                    // If createOrb is not available, use createOrbBurst but with one value per orb
+                    window.expOrbManager.createOrbBurst(ore.x, ore.y, expAmount, expAmount);
                 }
-            } 
+            }
             // Use old implementation if the above isn't available
             else if (window.ExperienceOrbManager) {
                 // Try to use the manager if it's already instantiated
@@ -554,40 +541,23 @@ class PickaxeAttack extends Attack {
                     window.expOrbManager = manager;
                 }
                 
-                if (manager.createOrbBurst) {
-                    // Create an orb burst
-                    manager.createOrbBurst(ore.x, ore.y, orbCount, expAmount);
-                } else if (manager.createOrb) {
+                if (manager.createOrb) {
                     // Create individual orbs with the burst pattern
-                    for (let j = 0; j < orbCount; j++) {
+                    for (let j = 0; j < expAmount; j++) {
                         const angle = Math.random() * Math.PI * 2;
                         const distance = 10 + Math.random() * 20;
                         const orbX = ore.x + Math.cos(angle) * distance;
                         const orbY = ore.y + Math.sin(angle) * distance;
                         
-                        let orbXp;
-                        if (j === 0 && orbCount > 1) {
-                            orbXp = Math.ceil(expAmount * (0.4 + Math.random() * 0.2));
-                        } else {
-                            const remaining = expAmount - (j === 0 ? orbXp : 0);
-                            orbXp = Math.max(1, Math.ceil(remaining / (orbCount - j) * (0.5 + Math.random())));
-                        }
-                        
-                        manager.createOrb(orbX, orbY, orbXp);
+                        // Each orb is worth 1 XP
+                        manager.createOrb(orbX, orbY, 1);
                     }
+                } else if (manager.createOrbBurst) {
+                    // Create an orb burst with one value per orb
+                    manager.createOrbBurst(ore.x, ore.y, expAmount, expAmount);
                 }
-            } 
-            // If no manager is available, just log it
-            else {
+            } else {
                 console.warn("Could not create experience orbs: No ExperienceOrbManager found");
-            }
-            
-            // Add a message
-            if (window.addChatMessage) {
-                window.addChatMessage({
-                    type: 'system',
-                    message: `Experience orbs released from the broken rock!`
-                });
             }
         } catch (error) {
             console.error("Error creating experience orbs:", error);
@@ -618,29 +588,31 @@ class PickaxeAttack extends Attack {
 class AxeAttack extends Attack {
     constructor(player, ctx) {
         super(player, ctx);
-        this.maxCooldown = 600; // ms - faster than pickaxe
-        this.range = 90; // Shorter range than pickaxe
+        this.name = 'axe';
+        this.damage = 15;
+        this.range = 60;
+        this.cooldown = 600; // Milliseconds
+        this.duration = 400; // Milliseconds
+        this.width = 30; // Width of swing arc
         this.length = 45; // Length of the axe
-        this.hitChecked = false;
+        this.hasHit = false;
+        this.elapsedTime = 0;
         
         // Load hit sound
-        try {
-            this.hitSound = hitSound2 || new Audio('sounds/hit2.mp3');
-            this.hitSound.volume = 0.3; // Set volume to 30%
-        } catch (error) {
-            console.error("Could not load axe hit sound:", error);
-            this.hitSound = null;
-        }
+        this.hitSound = 'chop';
+        
+        console.log('AxeAttack initialized');
     }
     
     getDuration() {
-        return 250; // ms - faster swing than pickaxe
+        return this.duration;
     }
     
     start(direction) {
-        if (!super.start(direction)) return false;
-        
+        super.start(direction);
         this.hitChecked = false;
+        this.hasHit = false;
+        this.elapsedTime = 0;
         
         // Schedule hit check at 50% through the swing (middle of side swing)
         setTimeout(() => {
@@ -648,11 +620,201 @@ class AxeAttack extends Attack {
                 this.checkHits();
                 this.hitChecked = true;
             }
-        }, this.getDuration() * 0.5);
-        
-        return true;
+        }, this.duration * 0.5);
     }
     
+    update(deltaTime) {
+        super.update(deltaTime);
+        this.elapsedTime += deltaTime;
+    }
+    
+    // Add the createDefaultParticles method
+    createDefaultParticles(x, y, color) {
+        if (!window.particleManager) return;
+        
+        const particleCount = 5 + Math.floor(Math.random() * 5);
+        const particles = [];
+        
+        for (let i = 0; i < particleCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 3;
+            const size = 1 + Math.random() * 3;
+            const life = 500 + Math.random() * 1000;
+            
+            particles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: size,
+                color: color,
+                life: life,
+                maxLife: life,
+                gravity: 0.05 + Math.random() * 0.1
+            });
+        }
+        
+        window.particleManager.addParticles(particles);
+    }
+    
+    // Add the createExperienceOrbs method (keeping both methods for compatibility)
+    createExperienceOrbs(ore, drops) {
+        try {
+            const expAmount = drops && drops.experience ? drops.experience : 10;
+            
+            // Create one orb per experience point, instead of combining them
+            // This will allow them to merge naturally when they get close to each other
+            console.log(`Rock destroyed! Creating ${expAmount} individual experience orbs`);
+            
+            // Create orbs using ExperienceOrbManager
+            if (window.expOrbManager) {
+                // Create individual orbs in a burst pattern
+                if (window.expOrbManager.createOrb) {
+                    for (let j = 0; j < expAmount; j++) {
+                        // Random position around the ore
+                        const angle = Math.random() * Math.PI * 2;
+                        const distance = 10 + Math.random() * 20;
+                        const orbX = ore.x + Math.cos(angle) * distance;
+                        const orbY = ore.y + Math.sin(angle) * distance;
+                        
+                        // Each orb is worth 1 XP
+                        window.expOrbManager.createOrb(orbX, orbY, 1);
+                    }
+                } else if (window.expOrbManager.createOrbBurst) {
+                    // If createOrb is not available, use createOrbBurst but with one value per orb
+                    window.expOrbManager.createOrbBurst(ore.x, ore.y, expAmount, expAmount);
+                }
+            }
+            // Use old implementation if the above isn't available
+            else if (window.ExperienceOrbManager) {
+                // Try to use the manager if it's already instantiated
+                let manager = window.expOrbManager;
+                
+                // If not, create a new one
+                if (!manager) {
+                    manager = new window.ExperienceOrbManager();
+                    window.expOrbManager = manager;
+                }
+                
+                if (manager.createOrb) {
+                    // Create individual orbs with the burst pattern
+                    for (let j = 0; j < expAmount; j++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const distance = 10 + Math.random() * 20;
+                        const orbX = ore.x + Math.cos(angle) * distance;
+                        const orbY = ore.y + Math.sin(angle) * distance;
+                        
+                        // Each orb is worth 1 XP
+                        manager.createOrb(orbX, orbY, 1);
+                    }
+                } else if (manager.createOrbBurst) {
+                    // Create an orb burst with one value per orb
+                    manager.createOrbBurst(ore.x, ore.y, expAmount, expAmount);
+                }
+            } else {
+                console.warn("Could not create experience orbs: No ExperienceOrbManager found");
+            }
+        } catch (error) {
+            console.error("Error creating experience orbs:", error);
+        }
+    }
+    
+    /**
+     * Create wood chip particles when hitting a tree
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     * @param {string} color - Particle color
+     */
+    createWoodParticles(x, y, color) {
+        if (window.particleManager) {
+            const particleCount = Math.floor(5 + Math.random() * 5);
+            const baseSpeed = 0.5 + Math.random() * 1.5;
+            
+            for (let i = 0; i < particleCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = baseSpeed * (0.5 + Math.random());
+                const dx = Math.cos(angle) * speed;
+                const dy = Math.sin(angle) * speed;
+                
+                // Make wood chips more rectangular
+                const width = 3 + Math.random() * 3;
+                const height = 2 + Math.random() * 2;
+                const rotation = Math.random() * Math.PI * 2;
+                
+                window.particleManager.createParticle({
+                    x: x + (Math.random() - 0.5) * 10,
+                    y: y + (Math.random() - 0.5) * 10,
+                    dx: dx,
+                    dy: dy,
+                    width: width,
+                    height: height,
+                    rotation: rotation,
+                    rotationSpeed: (Math.random() - 0.5) * 0.2,
+                    gravity: 0.05,
+                    life: 20 + Math.random() * 30,
+                    color: color,
+                    alpha: 0.9,
+                    alphaDecay: 0.02
+                });
+            }
+        }
+    }
+    
+    /**
+     * Create experience orbs from chopped tree
+     * @param {Object} tree - The tree that was chopped
+     * @param {Object} drops - Drops from the tree
+     */
+    createWoodExperienceOrbs(tree, drops) {
+        if (!tree || !drops) return;
+        
+        const experience = Math.floor(drops.experience || 0);
+        
+        if (experience <= 0) return;
+        
+        console.log(`Creating ${experience} individual experience orbs from chopped tree`);
+        
+        // Add experience to the woodcutting skill
+        if (this.player && window.game && window.game.skillsManager) {
+            window.game.skillsManager.addExperience('woodcutting', experience);
+        }
+        
+        // Use the newer experience orb manager if available
+        if (window.expOrbManager) {
+            // Create one orb per experience point
+            for (let i = 0; i < experience; i++) {
+                // Create a burst pattern around the tree
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * 20;
+                const orbX = tree.x + Math.cos(angle) * distance;
+                const orbY = tree.y + Math.sin(angle) * distance;
+                
+                window.expOrbManager.createOrb({
+                    x: orbX,
+                    y: orbY,
+                    value: 1, // Each orb is worth 1 XP
+                    mergeDistance: 20
+                });
+            }
+        } 
+        // Fallback to older implementation
+        else if (window.ExperienceOrbManager) {
+            for (let i = 0; i < experience; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * 20;
+                const orbX = tree.x + Math.cos(angle) * distance;
+                const orbY = tree.y + Math.sin(angle) * distance;
+                
+                window.ExperienceOrbManager.createOrb(orbX, orbY, 1);
+            }
+        }
+        // Fallback when no experience orb manager is found
+        else {
+            console.warn('No experience orb manager found');
+        }
+    }
+    
+    // Re-add the missing draw method
     draw(cameraX, cameraY) {
         if (!this.isActive) return;
         
@@ -666,7 +828,7 @@ class AxeAttack extends Attack {
         // Calculate swing angle based on progress
         // For axe: Side to side swing
         const swingStartAngle = this.direction - Math.PI * 0.4; // Start from left
-        const swingEndAngle = this.direction + Math.PI * 0.4; // End at right
+        const swingEndAngle = this.direction + Math.PI * 0.4;   // End at right
         const currentSwingAngle = swingStartAngle + (swingEndAngle - swingStartAngle) * progress;
         
         // Draw axe based on current swing angle
@@ -713,205 +875,122 @@ class AxeAttack extends Attack {
         }
     }
     
+    // Re-add play hit sound
+    playHitSound() {
+        try {
+            if (window.game && window.game.assetLoader) {
+                window.game.assetLoader.playSound(this.hitSound, 0.4);
+            } else if (window.audioContext) {
+                // Fallback to direct audio playing
+                const soundName = 'sounds/chop.mp3';
+                const sound = window.soundsCache && window.soundsCache[soundName] ? 
+                    window.soundsCache[soundName].cloneNode() : new Audio(soundName);
+                sound.volume = 0.4;
+                sound.playbackRate = 0.9 + Math.random() * 0.2; // Add some pitch variation
+                sound.play().catch(err => console.log('Sound play failed:', err));
+            }
+        } catch (error) {
+            console.error("Error playing hit sound:", error);
+        }
+    }
+
+    // Add the missing checkHits method
     checkHits() {
-        // Similar to pickaxe with slightly different parameters
-        if (!this.isActive || !window.ores || this.hitChecked) return [];
+        // If already hit something or not at the right frame of animation, skip
+        if (this.hasHit || this.elapsedTime < (this.getDuration() * 0.4)) {
+            return false;
+        }
         
-        const hitOres = [];
+        const player = this.player;
         
-        // Calculate attack area (wider arc for axe)
-        const attackAngle = Math.PI * 0.6; // 108 degree attack arc
+        // Check if there are rocks nearby
+        let hitSomething = false;
         
-        // Check each ore
-        for (let i = 0; i < window.ores.length; i++) {
-            const ore = window.ores[i];
+        // Calculate attack point position
+        const attackRange = player.size * 2.5;
+        const attackX = player.x + Math.cos(this.direction) * attackRange;
+        const attackY = player.y + Math.sin(this.direction) * attackRange;
+        
+        // Check for ore hits
+        if (window.oreManager) {
+            const hitOre = window.oreManager.hitOreAt(attackX, attackY, 20, this.damage, player);
             
-            // Calculate distance and angle to ore
-            const dx = ore.x - this.player.x;
-            const dy = ore.y - this.player.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const angle = Math.atan2(dy, dx);
-            
-            // Normalize angle difference
-            let angleDiff = angle - this.direction;
-            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-            
-            // Check if ore is within attack range and angle
-            if (distance < this.range && Math.abs(angleDiff) < attackAngle / 2) {
-                // Calculate damage
-                let damage = 10; // Default axe damage
+            if (hitOre) {
+                this.hasHit = true;
+                hitSomething = true;
                 
-                if (window.selectedTool && window.selectedTool.stats && window.selectedTool.stats.strength) {
-                    damage = window.selectedTool.stats.strength;
-                }
+                // Create particles at hit location
+                this.createDefaultParticles(hitOre.x, hitOre.y, hitOre.color);
                 
-                // Ore is hit!
-                const destroyed = ore.hit ? ore.hit(damage) : false;
+                // Show hit effect
+                if (window.game) window.game.updateHitRocksEffect(hitOre);
                 
                 // Play hit sound
                 this.playHitSound();
                 
-                // Generate particles
-                if (ore.generateParticles) {
-                    const particles = ore.generateParticles();
-                    if (particles && particles.length > 0) {
-                        window.rockParticles.push(...particles);
-                    }
-                } else {
-                    // Create default particles 
-                    this.createDefaultParticles(ore.x, ore.y, ore.color || '#A9A9A9');
+                // Check if ore was destroyed and create experience orbs
+                if (hitOre.health <= 0) {
+                    const drops = hitOre.getDrops();
+                    this.createExperienceOrbs(hitOre, drops);
                 }
-                
-                // Add visual hit effect
-                window.hitRocks.add(ore);
-                window.rockHitTimes.set(ore, Date.now());
-                
-                // If ore is destroyed, handle drops and remove it
-                if (destroyed) {
-                    const drops = ore.getDrops ? ore.getDrops() : [];
-                    
-                    // Create experience orbs
-                    this.createExperienceOrbs(ore, drops);
-                    
-                    // Remove the ore
-                    if (window.oreManager && window.oreManager.removeOre) {
-                        window.oreManager.removeOre(ore);
-                    } else {
-                        window.ores.splice(i, 1);
-                        i--;
-                    }
-                }
-                
-                hitOres.push(i);
             }
         }
         
-        return hitOres;
-    }
-    
-    createDefaultParticles(x, y, color) {
-        // Same as in PickaxeAttack
-        if (!window.rockParticles) window.rockParticles = [];
-        
-        const particleCount = 5 + Math.floor(Math.random() * 5);
-        
-        for (let i = 0; i < particleCount; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 1 + Math.random() * 3;
-            const size = 1 + Math.random() * 3;
-            const lifetime = 500 + Math.random() * 1000;
+        // Check for tree hits
+        if (window.game && window.game.treeManager && !hitSomething) {
+            const nearbyTrees = window.game.treeManager.getTreesInRadius(attackX, attackY, 30);
             
-            window.rockParticles.push({
-                x: x,
-                y: y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                size: size,
-                color: color,
-                opacity: 0.8,
-                lifetime: lifetime,
-                created: Date.now()
-            });
-        }
-    }
-    
-    createExperienceOrbs(ore, drops) {
-        // Same as in PickaxeAttack
-        try {
-            const expAmount = drops && drops.experience ? drops.experience : 10;
-            const orbCount = 3 + Math.floor(Math.random() * 3);
-            
-            console.log(`Rock destroyed! Experience: ${expAmount}, Creating ${orbCount} orbs`);
-            
-            if (window.expOrbManager) {
-                // Try to use the createOrbBurst method first for a proper burst effect
-                if (window.expOrbManager.createOrbBurst) {
-                    window.expOrbManager.createOrbBurst(ore.x, ore.y, orbCount, expAmount);
-                } 
-                // Otherwise, create individual orbs in a burst pattern
-                else if (window.expOrbManager.createOrb) {
-                    for (let j = 0; j < orbCount; j++) {
-                        // Random position around the ore
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 10 + Math.random() * 20;
-                        const orbX = ore.x + Math.cos(angle) * distance;
-                        const orbY = ore.y + Math.sin(angle) * distance;
-                        
-                        // Distribute XP among orbs, with some variation
-                        // Make first orb larger (40-60% of total)
-                        let orbXp;
-                        if (j === 0 && orbCount > 1) {
-                            orbXp = Math.ceil(expAmount * (0.4 + Math.random() * 0.2));
-                        } else {
-                            // Distribute remaining XP somewhat randomly
-                            const remaining = expAmount - (j === 0 ? orbXp : 0);
-                            orbXp = Math.max(1, Math.ceil(remaining / (orbCount - j) * (0.5 + Math.random())));
-                        }
-                        
-                        window.expOrbManager.createOrb(orbX, orbY, orbXp);
-                    }
-                }
-            } 
-            // Use old implementation if the above isn't available
-            else if (window.ExperienceOrbManager) {
-                // Try to use the manager if it's already instantiated
-                let manager = window.expOrbManager;
+            for (const tree of nearbyTrees) {
+                if (tree.chopped) continue;
                 
-                // If not, create a new one
-                if (!manager) {
-                    manager = new window.ExperienceOrbManager();
-                    window.expOrbManager = manager;
-                }
+                // Check if the attack hit the tree
+                const dx = tree.x - attackX;
+                const dy = tree.y - attackY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
                 
-                if (manager.createOrbBurst) {
-                    // Create an orb burst
-                    manager.createOrbBurst(ore.x, ore.y, orbCount, expAmount);
-                } else if (manager.createOrb) {
-                    // Create individual orbs with the burst pattern
-                    for (let j = 0; j < orbCount; j++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 10 + Math.random() * 20;
-                        const orbX = ore.x + Math.cos(angle) * distance;
-                        const orbY = ore.y + Math.sin(angle) * distance;
+                if (distance < 30) { // Reasonable hit range for trees
+                    // Apply woodcutting skill bonuses if available
+                    let damageMultiplier = 1.0;
+                    
+                    if (player && window.game && window.game.skillsManager) {
+                        const woodcuttingSkill = window.game.skillsManager.getSkill('woodcutting');
                         
-                        let orbXp;
-                        if (j === 0 && orbCount > 1) {
-                            orbXp = Math.ceil(expAmount * (0.4 + Math.random() * 0.2));
-                        } else {
-                            const remaining = expAmount - (j === 0 ? orbXp : 0);
-                            orbXp = Math.max(1, Math.ceil(remaining / (orbCount - j) * (0.5 + Math.random())));
+                        if (woodcuttingSkill) {
+                            const level = woodcuttingSkill.level || 1;
+                            
+                            // Apply damage bonus based on woodcutting level
+                            // 5% bonus per 10 levels
+                            damageMultiplier = 1 + (Math.floor(level / 10) * 0.05);
                         }
-                        
-                        manager.createOrb(orbX, orbY, orbXp);
                     }
+                    
+                    // Calculate damage for trees
+                    const baseDamage = this.damage * damageMultiplier;
+                    const damage = Math.max(1, Math.floor(baseDamage / tree.hardness));
+                    
+                    // Apply damage to the tree
+                    const treeDestroyed = tree.hit(damage, player);
+                    this.hasHit = true;
+                    hitSomething = true;
+                    
+                    // Create wood chip particles at hit location
+                    this.createWoodParticles(tree.x, tree.y, tree.trunkColor);
+                    
+                    // Play hit sound
+                    this.playHitSound();
+                    
+                    // If tree was chopped, create experience orbs
+                    if (treeDestroyed) {
+                        const drops = tree.getDrops();
+                        this.createWoodExperienceOrbs(tree, drops);
+                    }
+                    
+                    break; // Only hit one tree at a time
                 }
-            } else {
-                console.warn("Could not create experience orbs: No ExperienceOrbManager found");
             }
-        } catch (error) {
-            console.error("Error creating experience orbs:", error);
         }
-    }
-    
-    playHitSound() {
-        if (!this.hitSound) return;
         
-        try {
-            // Clone the sound to allow multiple overlapping sounds
-            const sound = this.hitSound.cloneNode();
-            
-            // Add some pitch variation
-            sound.playbackRate = 0.9 + Math.random() * 0.2;
-            
-            // Play the sound
-            sound.play().catch(err => {
-                // Handle autoplay restrictions
-                console.log('Sound play failed:', err);
-            });
-        } catch (error) {
-            console.error("Error playing sound:", error);
-        }
+        return hitSomething;
     }
 }
 

@@ -382,6 +382,11 @@ class Renderer {
         // Draw ores
         this.game.oreManager.drawOres(this.ctx, this.cameraX, this.cameraY);
         
+        // Draw trees
+        if (this.game.treeManager) {
+            this.game.treeManager.draw(this.ctx, this.cameraX, this.cameraY);
+        }
+        
         // Draw particles
         this.renderParticles();
         

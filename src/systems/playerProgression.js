@@ -319,6 +319,41 @@ export class ExperienceBar {
     }
 }
 
+/**
+ * Save player skills progress including woodcutting
+ * @param {Object} player - The player object
+ * @param {Object} skillsData - Skills progress data
+ */
+export function saveSkillsProgress(player, skillsData) {
+    if (!player || !skillsData) return;
+    
+    // Make sure player.skills exists
+    if (!player.skills) {
+        player.skills = {};
+    }
+    
+    // Save each skill's progress
+    for (const skillId in skillsData) {
+        player.skills[skillId] = {
+            level: skillsData[skillId].level || 1,
+            experience: skillsData[skillId].experience || 0
+        };
+    }
+    
+    // Ensure woodcutting progress is saved
+    if (skillsData.woodcutting) {
+        if (!player.skills.woodcutting) {
+            player.skills.woodcutting = {
+                level: 1,
+                experience: 0
+            };
+        }
+        
+        player.skills.woodcutting.level = skillsData.woodcutting.level || player.skills.woodcutting.level;
+        player.skills.woodcutting.experience = skillsData.woodcutting.experience || player.skills.woodcutting.experience;
+    }
+}
+
 // Create a playerProgression object that contains all exported functions
 const playerProgression = {
     BASE_XP,
@@ -329,7 +364,8 @@ const playerProgression = {
     calculateLevelProgress,
     hasLeveledUp,
     getLevelsGained,
-    ExperienceBar
+    ExperienceBar,
+    saveSkillsProgress
 };
 
 // Make playerProgression available globally for backward compatibility
