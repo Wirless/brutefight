@@ -1054,25 +1054,37 @@ class AxeAttack extends Attack {
         
         // Process tree hits
         if (nearbyTrees && nearbyTrees.length > 0) {
-            // Find closest tree
-            let closestTree = null;
-            let closestDistance = AXE_ATTACK_RADIUS;
+            // Determine how many trees we can hit based on woodcutting skill
+            let maxTreeHits = 1; // Default is 1 tree
             
-            for (const tree of nearbyTrees) {
-                if (tree.chopped) continue;
-                
-                const dx = tree.x - attackX;
-                const dy = tree.y - attackY;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    closestTree = tree;
+            // Check if player has woodcutting skill and calculate extra hits
+            if (window.game && window.game.skillsManager) {
+                const woodcuttingSkill = window.game.skillsManager.getSkill('woodcutting');
+                if (woodcuttingSkill) {
+                    const level = woodcuttingSkill.level || 1;
+                    // For every 5 levels, add 1 tree (level 1-4 = 1 tree, 5-9 = 2 trees, etc.)
+                    maxTreeHits = 1 + Math.floor(level / 5);
+                    console.log(`Woodcutting level ${level} allows hitting up to ${maxTreeHits} trees`);
                 }
             }
             
-            if (closestTree) {
-                console.log(`Hitting tree at (${closestTree.x}, ${closestTree.y}) with axe`);
+            // Sort trees by distance to hit closest ones first
+            const sortedTrees = nearbyTrees
+                .filter(tree => !tree.chopped) // Filter out already chopped trees
+                .map(tree => {
+                    const dx = tree.x - attackX;
+                    const dy = tree.y - attackY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    return { tree, distance };
+                })
+                .sort((a, b) => a.distance - b.distance); // Sort by distance (closest first)
+            
+            // Limit to max number of trees we can hit
+            const treesToHit = sortedTrees.slice(0, maxTreeHits);
+            
+            // Hit each tree in range up to our max
+            for (const { tree: targetTree, distance } of treesToHit) {
+                console.log(`Hitting tree at (${targetTree.x}, ${targetTree.y}) with axe (distance: ${distance.toFixed(2)})`);
                 
                 // Apply woodcutting skill bonus if it exists
                 let damageMultiplier = 1.0;
@@ -1088,16 +1100,16 @@ class AxeAttack extends Attack {
                 
                 // Hit the tree
                 let treeDestroyed = false;
-                if (typeof closestTree.hit === 'function') {
-                    treeDestroyed = closestTree.hit(damage, player);
-                } else if (closestTree.health !== undefined) {
-                    closestTree.health -= damage;
-                    if (closestTree.health <= 0) {
-                        closestTree.health = 0;
+                if (typeof targetTree.hit === 'function') {
+                    treeDestroyed = targetTree.hit(damage, player);
+                } else if (targetTree.health !== undefined) {
+                    targetTree.health -= damage;
+                    if (targetTree.health <= 0) {
+                        targetTree.health = 0;
                         treeDestroyed = true;
                         // Try to call chop method if it exists
-                        if (typeof closestTree.chop === 'function') {
-                            closestTree.chop();
+                        if (typeof targetTree.chop === 'function') {
+                            targetTree.chop();
                         }
                     }
                 }
@@ -1107,30 +1119,32 @@ class AxeAttack extends Attack {
                 hitSomething = true;
                 
                 // Create wood particles
-                this.createWoodParticles(closestTree.x, closestTree.y, closestTree.trunkColor || '#8B4513');
+                this.createWoodParticles(targetTree.x, targetTree.y, targetTree.trunkColor || '#8B4513');
                 
-                // Play hit sound
-                this.playHitSound();
+                // Play hit sound (only for the first tree to avoid sound spam)
+                if (distance === treesToHit[0].distance) {
+                    this.playHitSound();
+                }
                 
                 // Create experience orbs if tree was destroyed
                 if (treeDestroyed) {
                     console.log("Tree chopped down!");
-                    const drops = closestTree.getDrops ? closestTree.getDrops() : { experience: 10 };
-                    this.createWoodExperienceOrbs(closestTree, drops);
+                    const drops = targetTree.getDrops ? targetTree.getDrops() : { experience: 10 };
+                    this.createWoodExperienceOrbs(targetTree, drops);
                 }
                 
                 // Add to hit trees for visual effect
                 if (!window.hitRocks) window.hitRocks = new Set();
                 if (!window.rockHitTimes) window.rockHitTimes = new Map();
                 
-                window.hitRocks.add(closestTree);
-                window.rockHitTimes.set(closestTree, Date.now());
+                window.hitRocks.add(targetTree);
+                window.rockHitTimes.set(targetTree, Date.now());
             }
         }
         
         // --- ORE HIT DETECTION ---
-        // Try hitting ores (axe can hit rocks too, just less efficiently)
-        if (window.oreManager) {
+        // Only try hitting ores if we didn't hit any trees
+        if (!hitSomething && window.oreManager) {
             // Get ores within range
             const ores = window.oreManager.getOres ? window.oreManager.getOres() : window.ores;
             if (ores && ores.length > 0) {
