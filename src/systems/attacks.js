@@ -13,6 +13,14 @@ export const ATTACK_TYPES = {
 
 // Weapon types and their base properties
 export const WEAPON_TYPES = {
+    FIST: {
+        id: 'fist',
+        name: 'Fist',
+        type: ATTACK_TYPES.MELEE,
+        baseSpeed: 2.0,  // Faster than other weapons
+        baseDamage: 2,
+        range: 0.7
+    },
     SWORD: {
         id: 'sword',
         name: 'Sword',
@@ -159,6 +167,15 @@ try {
     hitSound2.volume = 0.3;
 } catch (error) {
     console.error("Could not load hit sounds:", error);
+}
+
+// Add global fist skill tracking
+if (!window.playerSkills) {
+    window.playerSkills = {
+        fist: 0, // Start at level 0
+        mining: 0,
+        woodcutting: 0
+    };
 }
 
 class Attack {
@@ -504,63 +521,54 @@ class PickaxeAttack extends Attack {
     }
     
     createExperienceOrbs(ore, drops) {
+        // Create experience based on the ore type
+        let totalExp = 5; // Base experience for stone
+        
+        // Add bonus exp for special ores
+        if (ore.type) {
+            switch(ore.type) {
+                case 'copper': totalExp += 10; break;
+                case 'iron': totalExp += 15; break;
+                case 'gold': totalExp += 25; break;
+                case 'diamond': totalExp += 40; break;
+                default: totalExp += 5; break;
+            }
+        }
+        
+        // Add randomness
+        totalExp += Math.floor(Math.random() * 5);
+        
+        console.log(`Creating ${totalExp} experience from ore`);
+        
         try {
-            const expAmount = drops && drops.experience ? drops.experience : 10;
-            
-            // Create one orb per experience point, instead of combining them
-            // This will allow them to merge naturally when they get close to each other
-            console.log(`Rock destroyed! Creating ${expAmount} individual experience orbs`);
-            
-            // Create orbs using ExperienceOrbManager
-            if (window.expOrbManager) {
-                // Create individual orbs in a burst pattern
-                if (window.expOrbManager.createOrb) {
-                    for (let j = 0; j < expAmount; j++) {
-                        // Random position around the ore
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 10 + Math.random() * 20;
-                        const orbX = ore.x + Math.cos(angle) * distance;
-                        const orbY = ore.y + Math.sin(angle) * distance;
-                        
-                        // Each orb is worth 1 XP
-                        window.expOrbManager.createOrb(orbX, orbY, 1);
-                    }
-                } else if (window.expOrbManager.createOrbBurst) {
-                    // If createOrb is not available, use createOrbBurst but with one value per orb
-                    window.expOrbManager.createOrbBurst(ore.x, ore.y, expAmount, expAmount);
-                }
-            } 
-            // Use old implementation if the above isn't available
-            else if (window.ExperienceOrbManager) {
-                // Try to use the manager if it's already instantiated
-                let manager = window.expOrbManager;
-                
-                // If not, create a new one
-                if (!manager) {
-                    manager = new window.ExperienceOrbManager();
-                    window.expOrbManager = manager;
-                }
-                
-                if (manager.createOrb) {
-                    // Create individual orbs with the burst pattern
-                    for (let j = 0; j < expAmount; j++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 10 + Math.random() * 20;
-                        const orbX = ore.x + Math.cos(angle) * distance;
-                        const orbY = ore.y + Math.sin(angle) * distance;
-                        
-                        // Each orb is worth 1 XP
-                        manager.createOrb(orbX, orbY, 1);
-                    }
-                } else if (manager.createOrbBurst) {
-                    // Create an orb burst with one value per orb
-                    manager.createOrbBurst(ore.x, ore.y, expAmount, expAmount);
-                }
+            if (window.experienceOrbManager) {
+                window.experienceOrbManager.createExperienceOrbs(ore.x, ore.y, totalExp);
+            } else if (window.ExperienceOrbManager) {
+                window.ExperienceOrbManager.createExperienceOrbs(ore.x, ore.y, totalExp);
             } else {
-                console.warn("Could not create experience orbs: No ExperienceOrbManager found");
+                console.error("No experience orb manager found to create orbs");
             }
         } catch (error) {
-            console.error("Error creating experience orbs:", error);
+            console.error('Error creating experience orbs:', error);
+        }
+    }
+    
+    createWoodExperienceOrbs(tree, drops) {
+        // More experience for trees than basic rocks
+        const totalExp = 10 + Math.floor(Math.random() * 10);
+        
+        console.log(`Creating ${totalExp} experience from tree`);
+        
+        try {
+            if (window.experienceOrbManager) {
+                window.experienceOrbManager.createExperienceOrbs(tree.x, tree.y, totalExp);
+            } else if (window.ExperienceOrbManager) {
+                window.ExperienceOrbManager.createExperienceOrbs(tree.x, tree.y, totalExp);
+            } else {
+                console.error("No experience orb manager found to create orbs");
+            }
+        } catch (error) {
+            console.error('Error creating experience orbs:', error);
         }
     }
     
@@ -1213,16 +1221,656 @@ class AxeAttack extends Attack {
     }
 }
 
+class FistAttack extends Attack {
+    constructor(player, ctx) {
+        super(player, ctx);
+        this.maxCooldown = 300; // Faster cooldown for fists - 300ms
+        this.range = 40; // Updated to 40 pixels as requested
+        this.arcWidth = 55 * (Math.PI / 180); // 55 degrees in radians
+        this.hitChecked = false;
+        this.lastClickTime = Date.now();
+        this.clicksPerSecond = 0;
+        this.clickCount = 0;
+        this.clickTimeWindow = [];
+        
+        // Initialize skills system integration
+        if (!this.player.skills) {
+            this.player.skills = {};
+        }
+        
+        // Add fist skill to player if it doesn't exist
+        if (!this.player.skills.fist) {
+            this.player.skills.fist = {
+                level: 1,
+                experience: 0,
+                maxExperience: 100 // Base XP for level 1
+            };
+        }
+        
+        // Track clicks per second
+        setInterval(() => {
+            // Calculate clicks per second based on clicks in the last second
+            this.clickTimeWindow = this.clickTimeWindow.filter(time => Date.now() - time < 1000);
+            this.clicksPerSecond = this.clickTimeWindow.length;
+        }, 1000);
+        
+        // Load hit sound explicitly with a relative path
+        this.hitSound = null;
+        this.loadHitSound();
+        
+        // Add notice about fist skill in chat if it exists and level > 1
+        if (window.chatManager && this.player.skills.fist.level > 1) {
+            window.chatManager.addMessage({
+                type: 'system',
+                message: `Your unarmed combat skill is level ${this.player.skills.fist.level}. Keep punching to improve!`
+            });
+        }
+    }
+    
+    // Separate method to load sound to better handle errors
+    loadHitSound() {
+        try {
+            this.hitSound = new Audio('./sounds/hit.mp3');
+            
+            // Preload the sound
+            this.hitSound.preload = 'auto';
+            this.hitSound.load();
+            
+            // Add error listener
+            this.hitSound.addEventListener('error', (e) => {
+                console.error("Error loading hit sound:", e);
+                // Try alternative path as fallback
+                try {
+                    this.hitSound = new Audio('../sounds/hit.mp3');
+                    this.hitSound.preload = 'auto';
+                    this.hitSound.load();
+                } catch (fallbackError) {
+                    console.error("Could not load fallback hit sound:", fallbackError);
+                }
+            });
+            
+            console.log("Loaded hit sound for fist attacks");
+        } catch (error) {
+            console.error("Could not initialize fist hit sound:", error);
+        }
+    }
+    
+    // Calculate damage based on fist skill
+    calculateDamage(baseMin, baseMax, strength) {
+        // Get current fist skill level
+        const fistLevel = this.player.skills.fist.level || 1;
+        
+        // Base damage calculation
+        let damage = Math.floor(Math.random() * (baseMax - baseMin + 1) + baseMin) * strength;
+        
+        // Apply fist skill bonus based on level
+        let skillBonus = 1.0; // Base multiplier
+        
+        if (fistLevel >= 50) skillBonus = 2.5;      // +150%
+        else if (fistLevel >= 40) skillBonus = 2.0;  // +100%
+        else if (fistLevel >= 30) skillBonus = 1.75; // +75%
+        else if (fistLevel >= 20) skillBonus = 1.5;  // +50%
+        else if (fistLevel >= 15) skillBonus = 1.3;  // +30%
+        else if (fistLevel >= 10) skillBonus = 1.2;  // +20%
+        else if (fistLevel >= 5) skillBonus = 1.1;   // +10%
+        
+        damage = Math.max(1, Math.floor(damage * skillBonus)); // Ensure at least 1 damage
+        
+        return damage;
+    }
+    
+    // Increase fist skill when hitting appropriate targets
+    increaseFistSkill(target, damage) {
+        // Don't increase skill for special ores
+        if (target && target.type && ['gold', 'diamond', 'iron', 'copper'].includes(target.type)) {
+            return;
+        }
+        
+        if (!this.player.skills || !this.player.skills.fist) {
+            this.player.skills = this.player.skills || {};
+            this.player.skills.fist = {
+                level: 1,
+                experience: 0,
+                maxExperience: 100
+            };
+        }
+        
+        // Add skill experience based on damage dealt (more damage = more xp)
+        const skillIncrease = Math.max(0.05, damage / 20);
+        
+        const currentLevel = this.player.skills.fist.level;
+        this.player.skills.fist.experience += skillIncrease;
+        
+        // Check for level up
+        if (this.player.skills.fist.experience >= this.player.skills.fist.maxExperience) {
+            this.levelUpFistSkill();
+        }
+        
+        // Update skill in global skills manager if it exists
+        if (window.playerSkills) {
+            window.playerSkills.fist = this.player.skills.fist.level + 
+                (this.player.skills.fist.experience / this.player.skills.fist.maxExperience);
+        }
+    }
+    
+    // Level up the fist skill
+    levelUpFistSkill() {
+        // Reset experience for next level
+        this.player.skills.fist.experience -= this.player.skills.fist.maxExperience;
+        this.player.skills.fist.level++;
+        this.player.skills.fist.maxExperience = this.calculateMaxExperience(this.player.skills.fist.level);
+        
+        // Notify player of level up
+        if (window.chatManager) {
+            window.chatManager.addMessage({
+                type: 'system',
+                message: `Your unarmed combat skill increased to level ${this.player.skills.fist.level}!`
+            });
+        }
+        
+        // Check for skill unlock messages
+        this.checkForSkillUnlocks(this.player.skills.fist.level);
+        
+        // If skills manager exists, update it
+        if (window.skillsManager) {
+            window.skillsManager.updateUI();
+        }
+    }
+    
+    // Calculate max experience for a given level
+    calculateMaxExperience(level) {
+        return Math.floor(100 * Math.pow(1.1, level - 1));
+    }
+    
+    // Check for skill unlock messages at specific levels
+    checkForSkillUnlocks(level) {
+        if (!window.chatManager) return;
+        
+        const unlocks = {
+            5: '+10% fist damage',
+            10: '+20% fist damage',
+            15: '+30% fist damage',
+            20: '+50% fist damage',
+            25: 'Chance to deal critical hits with fists',
+            30: '+75% fist damage',
+            40: '+100% fist damage',
+            50: '+150% fist damage and increased critical hit chance'
+        };
+        
+        if (unlocks[level]) {
+            window.chatManager.addMessage({
+                type: 'system',
+                message: `Unarmed combat level ${level} unlocked: ${unlocks[level]}`
+            });
+        }
+    }
+    
+    getDuration() {
+        return 300; // Faster attack animation
+    }
+    
+    start(direction) {
+        if (super.start(direction)) {
+            // Record this click for clicks per second calculation
+            this.clickTimeWindow.push(Date.now());
+            this.hitChecked = false;
+            
+            // Calculate time between clicks
+            const now = Date.now();
+            const timeBetweenClicks = now - this.lastClickTime;
+            this.lastClickTime = now;
+            
+            // Reset attack cooldown based on clicks
+            if (timeBetweenClicks < 300) {
+                // Fast clicking - reduce cooldown
+                this.cooldown = Math.max(100, this.maxCooldown - this.clicksPerSecond * 20);
+            } else {
+                this.cooldown = this.maxCooldown;
+            }
+            
+            return true;
+        }
+        return false;
+    }
+    
+    draw(cameraX, cameraY) {
+        if (!this.isActive || !this.player) return;
+        
+        const ctx = this.ctx;
+        if (!ctx) return;
+        
+        const progress = this.getProgress();
+        const screenX = this.player.x - Math.floor(cameraX);
+        const screenY = this.player.y - Math.floor(cameraY);
+        const radius = this.player.radius;
+        
+        // Determine fist position based on direction and progress
+        const direction = this.direction;
+        
+        // Calculate fist starting and ending positions
+        const startX = screenX;
+        const startY = screenY;
+        
+        // End position will be farther out at mid-animation, then retract
+        let punchExtension = 0;
+        if (progress < 0.5) {
+            // Extending punch
+            punchExtension = progress * 2; // 0 to 1
+        } else {
+            // Retracting punch
+            punchExtension = 2 - progress * 2; // 1 to 0
+        }
+        
+        // Calculate punch distance based on range and extension
+        const punchDistance = radius + (this.range - radius) * punchExtension;
+        
+        // Calculate end position based on direction and punch distance
+        const endX = startX + Math.cos(direction) * punchDistance;
+        const endY = startY + Math.sin(direction) * punchDistance;
+        
+        // Draw the arm/fist line
+        ctx.strokeStyle = '#e67e22'; // Brown arm color
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+        
+        // Draw the fist
+        ctx.fillStyle = '#e67e22';
+        ctx.beginPath();
+        ctx.arc(endX, endY, radius / 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw the hit arc (for debugging)
+        if (window.game && window.game.debug) {
+            // Draw the arc that represents the hit detection area
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.arc(startX, startY, this.range, direction - this.arcWidth/2, direction + this.arcWidth/2);
+            ctx.lineTo(startX, startY);
+            ctx.stroke();
+        }
+        
+        // Check for hits at the right moment in the animation
+        if (!this.hitChecked && progress > 0.4 && progress < 0.6) {
+            this.checkHits();
+            this.hitChecked = true;
+        }
+    }
+    
+    checkHits() {
+        if (!this.player || !this.isActive) return [];
+        
+        const hits = [];
+        const player = this.player;
+        const punchX = player.x + Math.cos(this.direction) * this.range;
+        const punchY = player.y + Math.sin(this.direction) * this.range;
+        
+        // Play hit sound on any attack regardless of hit
+        this.playHitSound();
+        
+        // Check collision with rocks (handled by ore manager)
+        if (window.oreManager) {
+            const ores = window.oreManager.ores || [];
+            for (const ore of ores) {
+                // Skip if ore is not visible
+                if (!ore || !ore.visible) continue;
+                
+                // Calculate distance between punch endpoint and ore center
+                const dx = punchX - ore.x;
+                const dy = punchY - ore.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Calculate angle to ore
+                const angleToOre = Math.atan2(dy, dx);
+                
+                // Normalize angle difference to be between -PI and PI
+                let angleDiff = angleToOre - this.direction;
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                
+                // Check if ore is within range and within the 55-degree arc
+                if (distance <= this.range + ore.radius && Math.abs(angleDiff) <= this.arcWidth / 2) {
+                    // Calculate damage based on strength, fist skill, and a random factor
+                    let damage = this.calculateDamage(1, 2, player.strength);
+                    
+                    // Apply effectiveness penalty for using fists on rocks
+                    damage = Math.max(1, Math.floor(damage * 0.4)); // ENSURE AT LEAST 1 DAMAGE
+                    
+                    // Get fist level for critical hit calculation
+                    const fistLevel = this.player.skills.fist.level || 1;
+                    
+                    // Check for critical hit based on clicks per second and fist level
+                    const criticalChanceBase = Math.min(0.5, this.clicksPerSecond * 0.05);
+                    let criticalChance = criticalChanceBase;
+                    
+                    // Increase critical chance based on fist level
+                    if (fistLevel >= 50) criticalChance += 0.15; // 15% extra at level 50+
+                    else if (fistLevel >= 25) criticalChance += 0.1; // 10% extra at level 25+
+                    
+                    const isCritical = Math.random() < criticalChance;
+                    
+                    if (isCritical) {
+                        damage *= 2;
+                        this.createCriticalHitText(ore.x, ore.y, damage);
+                    }
+                    
+                    console.log(`Dealing ${damage} damage to rock with fist skill level ${fistLevel}`);
+                    
+                    // Apply damage to ore
+                    let oreDestroyed = false;
+                    if (ore.hit) {
+                        oreDestroyed = ore.hit(damage, player);
+                    } else {
+                        ore.health = (ore.health || 100) - damage;
+                        if (ore.health <= 0) {
+                            ore.health = 0;
+                            oreDestroyed = true;
+                        }
+                    }
+                    
+                    // Increase fist skill on successful hit
+                    this.increaseFistSkill(ore, damage);
+                    
+                    // Create hit effect
+                    this.createDefaultParticles(ore.x, ore.y, ore.color);
+                    
+                    // Play hit sound again for feedback
+                    this.playHitSound();
+                    
+                    // Add ore to hit list
+                    hits.push(ore);
+                    
+                    // Add to hit rocks for visual effect
+                    if (!window.hitRocks) window.hitRocks = new Set();
+                    if (!window.rockHitTimes) window.rockHitTimes = new Map();
+                    
+                    window.hitRocks.add(ore);
+                    window.rockHitTimes.set(ore, Date.now());
+                    
+                    // Check if ore is broken
+                    if (oreDestroyed || ore.health <= 0) {
+                        // Ore is broken - drop items and experience
+                        const drops = { stone: 1 };
+                        if (ore.type) {
+                            drops[ore.type] = Math.ceil(Math.random() * 2);
+                        }
+                        
+                        // Add drops to player's resources
+                        for (const resourceType in drops) {
+                            player.resources[resourceType] = (player.resources[resourceType] || 0) + drops[resourceType];
+                        }
+                        
+                        // Create experience orbs
+                        this.createExperienceOrbs(ore, drops);
+                        
+                        // Mark ore for removal and respawn
+                        ore.visible = false;
+                        ore.respawnTime = Date.now() + 30000; // 30 second respawn
+                    }
+                }
+            }
+        }
+        
+        // Check collision with trees
+        if (window.treeManager) {
+            const trees = window.treeManager.trees || [];
+            for (const tree of trees) {
+                // Skip if tree is not visible
+                if (!tree || !tree.visible) continue;
+                
+                // Calculate distance and angle to tree
+                const dx = tree.x - player.x;
+                const dy = tree.y - player.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Use a larger hitbox for trees (tree radius + 50% extra)
+                const effectiveTreeRadius = (tree.radius || 20) * 1.5;
+                
+                // Calculate angle to tree
+                const angleToTree = Math.atan2(dy, dx);
+                
+                // Normalize angle difference
+                let angleDiff = angleToTree - this.direction;
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                
+                // IMPROVED: Check if tree is within range and within a wider arc (65 degrees for trees)
+                // Also add the tree's radius to the effective range
+                const widerTreeArcWidth = 65 * (Math.PI / 180); // 65 degrees for trees
+                
+                if (distance <= this.range + effectiveTreeRadius && Math.abs(angleDiff) <= widerTreeArcWidth / 2) {
+                    console.log("Tree hit detected!");
+                    
+                    // Calculate damage based on strength, fist skill, and a random factor
+                    let damage = this.calculateDamage(1, 4, player.strength);
+                    
+                    // Apply effectiveness penalty for using fists on trees
+                    damage = Math.max(1, Math.floor(damage * 0.3)); // ENSURE AT LEAST 1 DAMAGE
+                    
+                    // Get fist level for critical hit calculation
+                    const fistLevel = this.player.skills.fist.level || 1;
+                    
+                    // Check for critical hit based on clicks per second and fist level
+                    const criticalChanceBase = Math.min(0.5, this.clicksPerSecond * 0.05);
+                    let criticalChance = criticalChanceBase;
+                    
+                    // Increase critical chance based on fist level
+                    if (fistLevel >= 50) criticalChance += 0.15; // 15% extra at level 50+
+                    else if (fistLevel >= 25) criticalChance += 0.1; // 10% extra at level 25+
+                    
+                    const isCritical = Math.random() < criticalChance;
+                    
+                    if (isCritical) {
+                        damage *= 2;
+                        this.createCriticalHitText(tree.x, tree.y, damage);
+                    }
+                    
+                    console.log(`Applying ${damage} damage to tree with health: ${tree.health || 100}`);
+                    
+                    // Apply damage to tree - FIXED TO ENSURE DAMAGE APPLIES
+                    let treeDestroyed = false;
+                    if (tree.hit && typeof tree.hit === 'function') {
+                        // Use the hit method if it exists
+                        treeDestroyed = tree.hit(damage, player);
+                    } else {
+                        // Direct manipulation of health property
+                        tree.health = (tree.health || 100) - damage;
+                        console.log("Tree new health:", tree.health);
+                        if (tree.health <= 0) {
+                            tree.health = 0;
+                            treeDestroyed = true;
+                            console.log("Tree destroyed via health reduction");
+                        }
+                    }
+                    
+                    // Increase fist skill on successful hit
+                    this.increaseFistSkill(tree, damage);
+                    
+                    // Create hit effect
+                    this.createWoodParticles(tree.x, tree.y, tree.color || '#8B4513');
+                    
+                    // Play a wood hit sound
+                    this.playHitSound();
+                    
+                    // Add tree to hit list
+                    hits.push(tree);
+                    
+                    // Add to hit trees for visual effect
+                    if (!window.hitRocks) window.hitRocks = new Set();
+                    if (!window.rockHitTimes) window.rockHitTimes = new Map();
+                    
+                    window.hitRocks.add(tree);
+                    window.rockHitTimes.set(tree, Date.now());
+                    
+                    // Check if tree is broken
+                    if (treeDestroyed || tree.health <= 0) {
+                        console.log("Tree has been destroyed!");
+                        // Tree is broken - drop items and experience
+                        const drops = { wood: Math.ceil(Math.random() * 3 + 2) };
+                        
+                        // Add drops to player's resources
+                        for (const resourceType in drops) {
+                            player.resources[resourceType] = (player.resources[resourceType] || 0) + drops[resourceType];
+                        }
+                        
+                        // Create experience orbs
+                        this.createWoodExperienceOrbs(tree, drops);
+                        
+                        // Mark tree for removal and respawn
+                        tree.visible = false;
+                        tree.respawnTime = Date.now() + 60000; // 60 second respawn
+                    }
+                }
+            }
+        }
+        
+        return hits;
+    }
+    
+    createDefaultParticles(x, y, color) {
+        if (!window.rockParticles) window.rockParticles = [];
+        
+        const particleCount = 3 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < particleCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 20 + Math.random() * 30;
+            const size = 2 + Math.random() * 2;
+            const lifetime = 300 + Math.random() * 200;
+            
+            window.rockParticles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: size,
+                color: color || '#888888',
+                lifetime: lifetime,
+                createdAt: Date.now()
+            });
+        }
+    }
+    
+    createWoodParticles(x, y, color) {
+        if (!window.rockParticles) window.rockParticles = [];
+        
+        const particleCount = 3 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < particleCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 20 + Math.random() * 30;
+            const size = 2 + Math.random() * 3;
+            const lifetime = 300 + Math.random() * 200;
+            
+            window.rockParticles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: size,
+                color: color || '#8B4513',
+                lifetime: lifetime,
+                createdAt: Date.now()
+            });
+        }
+    }
+    
+    createCriticalHitText(x, y, damage) {
+        if (!window.textParticles) window.textParticles = [];
+        
+        window.textParticles.push({
+            x: x,
+            y: y,
+            text: `CRIT ${damage}!`,
+            color: '#FF0000',
+            size: 16,
+            vx: (Math.random() - 0.5) * 5,
+            vy: -20,
+            lifetime: 1000,
+            createdAt: Date.now()
+        });
+    }
+    
+    createExperienceOrbs(ore, drops) {
+        // Create experience based on the ore type
+        let totalExp = 5; // Base experience for stone
+        
+        // Add bonus exp for special ores
+        if (ore.type) {
+            switch(ore.type) {
+                case 'copper': totalExp += 10; break;
+                case 'iron': totalExp += 15; break;
+                case 'gold': totalExp += 25; break;
+                case 'diamond': totalExp += 40; break;
+                default: totalExp += 5; break;
+            }
+        }
+        
+        // Add randomness
+        totalExp += Math.floor(Math.random() * 5);
+        
+        console.log(`Creating ${totalExp} experience from ore`);
+        
+        try {
+            if (window.experienceOrbManager) {
+                window.experienceOrbManager.createExperienceOrbs(ore.x, ore.y, totalExp);
+            } else if (window.ExperienceOrbManager) {
+                window.ExperienceOrbManager.createExperienceOrbs(ore.x, ore.y, totalExp);
+            } else {
+                console.error("No experience orb manager found to create orbs");
+            }
+        } catch (error) {
+            console.error('Error creating experience orbs:', error);
+        }
+    }
+    
+    playHitSound() {
+        if (this.hitSound) {
+            try {
+                // Clone the sound to allow multiple plays
+                const sound = this.hitSound.cloneNode();
+                sound.volume = 0.3 + Math.random() * 0.2; // Slightly louder
+                sound.playbackRate = 0.9 + Math.random() * 0.2; // Less variation in pitch
+                
+                // Force the sound to play with a timeout fallback
+                const playPromise = sound.play();
+                
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => {
+                        console.error('Error playing hit sound:', e);
+                        // Try to play again after user interaction
+                        document.addEventListener('click', () => {
+                            sound.play().catch(e2 => console.error('Still cannot play sound:', e2));
+                        }, { once: true });
+                    });
+                }
+            } catch (error) {
+                console.error('Error playing hit sound:', error);
+                // Try recreating the sound
+                this.loadHitSound();
+            }
+        } else {
+            // If sound is null, try to reload it
+            this.loadHitSound();
+        }
+    }
+}
+
 // Create Attacks namespace
 const Attacks = {
     Attack,
     PickaxeAttack,
-    AxeAttack
+    AxeAttack,
+    FistAttack
 };
 
-// Make it globally available for backward compatibility
+// Make Attacks globally available for backward compatibility
 window.Attacks = Attacks;
+window.PickaxeAttack = PickaxeAttack;
+window.AxeAttack = AxeAttack;
+window.FistAttack = FistAttack;
 
 // Export as default and named exports
-export { Attack, PickaxeAttack, AxeAttack };
+export { Attack, PickaxeAttack, AxeAttack, FistAttack };
 export default Attacks; 

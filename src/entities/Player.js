@@ -23,6 +23,14 @@ class Player {
         this.experience = options.experience || 0;
         this.expToNextLevel = this.calculateExpToNextLevel();
         
+        // Player stats
+        this.strength = options.strength || Math.max(1, Math.floor(this.level / 2));
+        this.defense = options.defense || Math.max(1, Math.floor(this.level / 3));
+        this.dexterity = options.dexterity || Math.max(1, Math.floor(this.level / 2.5));
+        this.agility = options.agility || Math.max(1, Math.floor(this.level / 3));
+        this.intelligence = options.intelligence || Math.max(1, Math.floor(this.level / 2.5));
+        this.luck = options.luck || Math.max(1, Math.floor(this.level / 4));
+        
         // Player dimensions
         this.radius = options.radius || 20;
         this.drawRadius = this.radius;
@@ -111,6 +119,14 @@ class Player {
         let staminaMax = 100 + (this.level - 1) * 8;
         let moveSpeed = 5 + (this.level - 1) * 0.1;
         
+        // Base player attributes - will be overridden by equipment adjustments
+        this.strength = Math.max(1, Math.floor(this.level / 2) + (this.level % 2));
+        this.defense = Math.max(1, Math.floor(this.level / 3) + (this.level % 3));
+        this.dexterity = Math.max(1, Math.floor(this.level / 2.5) + (this.level % 2));
+        this.agility = Math.max(1, Math.floor(this.level / 3) + (this.level % 2));
+        this.intelligence = Math.max(1, Math.floor(this.level / 2.5) + (this.level % 3));
+        this.luck = Math.max(1, Math.floor(this.level / 4) + (this.level % 2));
+        
         // Apply equipment bonuses if equipment manager exists
         if (window.equipmentManager) {
             // Iterate through equipped items
@@ -121,6 +137,14 @@ class Player {
                     if (item.stats.mana) manaMax += item.stats.mana;
                     if (item.stats.stamina) staminaMax += item.stats.stamina;
                     if (item.stats.speed) moveSpeed += item.stats.speed;
+                    
+                    // Apply stat bonuses from equipment
+                    if (item.stats.strength) this.strength += item.stats.strength;
+                    if (item.stats.defense) this.defense += item.stats.defense;
+                    if (item.stats.dexterity) this.dexterity += item.stats.dexterity;
+                    if (item.stats.agility) this.agility += item.stats.agility;
+                    if (item.stats.intelligence) this.intelligence += item.stats.intelligence;
+                    if (item.stats.luck) this.luck += item.stats.luck;
                 }
             }
         }
@@ -176,6 +200,16 @@ class Player {
         this.mana = this.maxMana;
         this.stamina = this.maxStamina;
         
+        // Record stats increase for notification
+        const statMessages = [
+            `Strength increased to ${this.strength}!`,
+            `Defense increased to ${this.defense}!`,
+            `Dexterity increased to ${this.dexterity}!`,
+            `Agility increased to ${this.agility}!`,
+            `Intelligence increased to ${this.intelligence}!`,
+            `Luck increased to ${this.luck}!`
+        ];
+        
         // Play level up sound if available
         if (this.game.assetLoader) {
             this.game.assetLoader.playSound('levelUp', 0.5);
@@ -186,6 +220,14 @@ class Player {
             this.game.chatManager.addMessage({
                 type: 'system',
                 message: `${this.username} reached level ${this.level}!`
+            });
+            
+            // Show stats changes
+            statMessages.forEach(msg => {
+                this.game.chatManager.addMessage({
+                    type: 'system',
+                    message: msg
+                });
             });
         }
         

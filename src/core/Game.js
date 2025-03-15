@@ -288,34 +288,47 @@ class Game {
     }
 
     /**
-     * Start the game
+     * Initialize the game after login
      */
     startGame() {
+        console.log("Starting game...");
+        
+        // Hide login panel and show game panel
+        document.getElementById('loginPanel').style.display = 'none';
+        document.getElementById('registerPanel').style.display = 'none';
+        document.getElementById('gamePanel').style.display = 'block';
+        
         // Initialize managers
         this.initManagers();
         
-        // Generate initial game world
-        this.generateInitialWorld();
-        
-        // Initialize experience bar
+        // Create experience bar
         this.initExperienceBar();
         
-        // Set up auto-save interval
+        // Stats display
+        this.createStatsDisplay();
+        
+        // Set up auto-save
         this.setupAutoSave();
+        
+        // Create initial world
+        this.generateInitialWorld();
+        
+        // Set up keyboard focus
+        this.canvas.focus();
         
         // Start the game loop
         this.lastUpdateTime = performance.now();
         this.running = true;
-        requestAnimationFrame(this.gameLoop);
+        requestAnimationFrame(this.gameLoop.bind(this));
         
         // Add welcome message to chat
         if (this.chatManager && this.chatManager.addMessage) {
             this.chatManager.addMessage({
                 type: 'system',
-                message: `Welcome to the game, ${this.username}! Use WASD to move and SPACE to attack.`
+                message: `Welcome to the game, ${this.username}! Use WASD to move and MOUSE to attack. Press 1-3 to switch weapons.`
             });
         } else {
-            console.log(`Welcome to the game, ${this.username}! Use WASD to move and SPACE to attack.`);
+            console.log(`Welcome to the game, ${this.username}! Use WASD to move and MOUSE to attack. Press 1-3 to switch weapons.`);
         }
     }
 
@@ -606,22 +619,77 @@ class Game {
     }
 
     /**
-     * Initialize the attack system
+     * Initialize attack system
      */
     initAttackSystem() {
         try {
             // Set up available attacks
             if (window.Attacks) {
                 this.availableAttacks = {
-                    pickaxe: new window.Attacks.PickaxeAttack(this.myPlayer, this.ctx),
-                    axe: new window.Attacks.AxeAttack(this.myPlayer, this.ctx)
+                    fist: new window.Attacks.FistAttack(this.myPlayer, this.ctx),
+                    pickaxe: null,  // Start with no pickaxe
+                    axe: null       // Start with no axe
                 };
-                this.currentAttack = this.availableAttacks.pickaxe; // Default attack
+                
+                // Only fists available at start
+                this.currentAttack = this.availableAttacks.fist;
+                
+                // Track currently selected weapon for UI and switching
+                this.selectedWeapon = 'fist';
+                
+                // Show initial weapon selection message
+                if (this.chatManager) {
+                    this.chatManager.addMessage({
+                        type: 'system',
+                        message: `Using your fists to start. Find tools to mine and chop more efficiently!`
+                    });
+                }
             } else {
                 console.error("Attacks not found");
             }
         } catch (error) {
             console.error("Error initializing attack system:", error);
+        }
+    }
+    
+    /**
+     * Switch to a different weapon
+     * @param {string} weaponType - Type of weapon to switch to ('fist', 'pickaxe', 'axe')
+     */
+    switchWeapon(weaponType) {
+        // Check if weapon type exists
+        if (!this.availableAttacks || !(weaponType in this.availableAttacks)) {
+            console.error(`Weapon type '${weaponType}' not defined`);
+            return;
+        }
+        
+        // Check if player has the weapon
+        if (weaponType !== 'fist' && !this.availableAttacks[weaponType]) {
+            // If trying to switch to a weapon that hasn't been found yet
+            if (this.chatManager) {
+                this.chatManager.addMessage({
+                    type: 'system',
+                    message: `You don't have a ${weaponType} yet! Find one first.`
+                });
+            }
+            return;
+        }
+        
+        this.currentAttack = this.availableAttacks[weaponType];
+        this.selectedWeapon = weaponType;
+        
+        // Show weapon switch message
+        if (this.chatManager) {
+            const weaponNames = {
+                'fist': 'Fists',
+                'pickaxe': 'Pickaxe',
+                'axe': 'Axe'
+            };
+            
+            this.chatManager.addMessage({
+                type: 'system',
+                message: `Switched to ${weaponNames[weaponType]}`
+            });
         }
     }
 
@@ -925,24 +993,16 @@ class Game {
         }
         
         // Weapon switching
-        if (key === '1' && this.availableAttacks && this.availableAttacks.pickaxe) {
-            this.currentAttack = this.availableAttacks.pickaxe;
-            if (this.chatManager && this.chatManager.addMessage) {
-                this.chatManager.addMessage({
-                    type: 'system',
-                    message: `${this.username} equips a pickaxe.`
-                });
-            }
+        if (key === '1' && this.availableAttacks && this.availableAttacks.fist) {
+            this.switchWeapon('fist');
         }
         
-        if (key === '2' && this.availableAttacks && this.availableAttacks.axe) {
-            this.currentAttack = this.availableAttacks.axe;
-            if (this.chatManager && this.chatManager.addMessage) {
-                this.chatManager.addMessage({
-                    type: 'system',
-                    message: `${this.username} equips an axe.`
-                });
-            }
+        if (key === '2' && this.availableAttacks && this.availableAttacks.pickaxe) {
+            this.switchWeapon('pickaxe');
+        }
+        
+        if (key === '3' && this.availableAttacks && this.availableAttacks.axe) {
+            this.switchWeapon('axe');
         }
         
         // Toggle equipment panel with 'E' key
@@ -953,9 +1013,11 @@ class Game {
             this.canvas.focus();
         }
         
-        // Handle toggle inventory panel with 'I' key
+        // Toggle inventory with 'i' key
         if (key === 'i') {
-            if (this.inventoryManager && this.inventoryManager.ui) {
+            if (this.inventoryUI) {
+                this.inventoryUI.toggle();
+            } else if (this.inventoryManager && this.inventoryManager.ui) {
                 this.inventoryManager.ui.toggle();
                 console.log("Toggling inventory UI");
             } else if (window.playerInventoryUI) {
@@ -1060,9 +1122,19 @@ class Game {
         if (this.currentAttack && this.currentAttack.start && this.currentAttack.start(direction)) {
             // Add attack message to chat
             if (this.chatManager && this.chatManager.addMessage) {
+                // Determine the weapon name based on the current attack
+                let weaponName = 'weapon';
+                if (this.currentAttack === this.availableAttacks.fist) {
+                    weaponName = 'fists';
+                } else if (this.currentAttack === this.availableAttacks.pickaxe) {
+                    weaponName = 'pickaxe';
+                } else if (this.currentAttack === this.availableAttacks.axe) {
+                    weaponName = 'axe';
+                }
+                
                 this.chatManager.addMessage({
                     type: 'system',
-                    message: `${this.username} swings their ${this.currentAttack === this.availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
+                    message: `${this.username} swings their ${weaponName}!`
                 });
             }
         }
@@ -1094,9 +1166,19 @@ class Game {
         if (this.currentAttack && this.currentAttack.start && this.currentAttack.start(this.attackDirection)) {
             // Add attack message to chat
             if (this.chatManager && this.chatManager.addMessage) {
+                // Determine the weapon name based on the current attack
+                let weaponName = 'weapon';
+                if (this.currentAttack === this.availableAttacks.fist) {
+                    weaponName = 'fists';
+                } else if (this.currentAttack === this.availableAttacks.pickaxe) {
+                    weaponName = 'pickaxe';
+                } else if (this.currentAttack === this.availableAttacks.axe) {
+                    weaponName = 'axe';
+                }
+                
                 this.chatManager.addMessage({
                     type: 'system',
-                    message: `${this.username} swings their ${this.currentAttack === this.availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
+                    message: `${this.username} swings their ${weaponName}!`
                 });
             }
             
@@ -2198,6 +2280,74 @@ class Game {
                 }
             }
         }
+    }
+
+    /**
+     * Create a player stats display UI
+     */
+    createStatsDisplay() {
+        // Create container for player stats
+        const statsContainer = document.createElement('div');
+        statsContainer.id = 'statsDisplay';
+        statsContainer.style.position = 'absolute';
+        statsContainer.style.top = '50px';
+        statsContainer.style.left = '10px';
+        statsContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        statsContainer.style.padding = '10px';
+        statsContainer.style.borderRadius = '5px';
+        statsContainer.style.color = 'white';
+        statsContainer.style.fontSize = '14px';
+        statsContainer.style.zIndex = '100';
+        statsContainer.style.fontFamily = 'monospace';
+        statsContainer.style.border = '1px solid rgb(0, 233, 150)';
+        statsContainer.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.3)';
+        
+        // Add to game panel
+        const gamePanel = document.getElementById('gamePanel');
+        if (gamePanel) {
+            gamePanel.appendChild(statsContainer);
+        }
+        
+        this.statsDisplay = statsContainer;
+        this.updateStatsDisplay();
+        
+        // Update stats display every second
+        setInterval(() => this.updateStatsDisplay(), 1000);
+    }
+    
+    /**
+     * Update the player stats display
+     */
+    updateStatsDisplay() {
+        if (!this.statsDisplay || !this.myPlayer) return;
+        
+        // Format CPS value
+        const cps = this.availableAttacks?.fist?.clicksPerSecond || 0;
+        const cpsBonus = Math.min(0.5, cps * 0.05);
+        
+        // Create stats HTML string
+        const statsHTML = `
+            <div style="text-align: center; margin-bottom: 5px; color: rgb(0, 233, 150);">Player Stats</div>
+            <div>Level: ${this.myPlayer.level}</div>
+            <div>Health: ${Math.floor(this.myPlayer.health)}/${this.myPlayer.maxHealth}</div>
+            <div style="border-bottom: 1px solid #444; padding-bottom: 5px;">
+                XP: ${this.myPlayer.experience}/${this.myPlayer.expToNextLevel}
+            </div>
+            <div style="color: #ff9966;">STR: ${this.myPlayer.strength}</div>
+            <div style="color: #99ccff;">DEF: ${this.myPlayer.defense}</div>
+            <div style="color: #99ff99;">DEX: ${this.myPlayer.dexterity}</div>
+            <div style="color: #ffff99;">AGI: ${this.myPlayer.agility}</div>
+            <div style="color: #cc99ff;">INT: ${this.myPlayer.intelligence}</div>
+            <div style="color: #ff99cc;">LUK: ${this.myPlayer.luck}</div>
+            <div style="border-top: 1px solid #444; padding-top: 5px;">
+                Weapon: ${this.selectedWeapon ? this.selectedWeapon.charAt(0).toUpperCase() + this.selectedWeapon.slice(1) : "None"}
+            </div>
+            <div>
+                Clicks/s: ${cps} <span style="color: #ff9999;">(+${Math.floor(cpsBonus * 100)}% crit)</span>
+            </div>
+        `;
+        
+        this.statsDisplay.innerHTML = statsHTML;
     }
 }
 

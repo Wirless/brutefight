@@ -42,6 +42,26 @@ export const SKILLS = {
         maxLevel: 99,
         baseXp: 50
     },
+    FIST: {
+        id: 'fist',
+        name: 'Unarmed Combat',
+        description: 'Increases damage when using fists to break rocks and trees',
+        type: SKILL_TYPES.COMBAT,
+        icon: 'fist',
+        maxLevel: 99,
+        baseXp: 30,
+        effects: [
+            { level: 1, description: 'Can break rocks and trees with fists' },
+            { level: 5, description: '+10% fist damage' },
+            { level: 10, description: '+20% fist damage' },
+            { level: 15, description: '+30% fist damage' },
+            { level: 20, description: '+50% fist damage' },
+            { level: 25, description: 'Chance to deal critical hits with fists' },
+            { level: 30, description: '+75% fist damage' },
+            { level: 40, description: '+100% fist damage' },
+            { level: 50, description: '+150% fist damage, increased critical hit chance' }
+        ]
+    },
     RANGED: {
         id: 'ranged',
         name: 'Ranged',

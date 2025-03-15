@@ -721,7 +721,7 @@ app.get('/', (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 800;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Open your browser and go to http://localhost:${PORT} or http://127.0.0.1:${PORT}`);
