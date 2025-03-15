@@ -431,3 +431,6 @@ class Renderer {
 
 // Make the Renderer class globally available
 window.Renderer = Renderer; 
+
+//add default export
+export default Renderer;

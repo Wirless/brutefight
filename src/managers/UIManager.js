@@ -2,7 +2,7 @@
  * UIManager.js
  * 
  * Manages all UI elements in the game, including player list,
- * leaderboard, and other interface components.
+ * and other interface components.
  */
 class UIManager {
     /**
@@ -14,7 +14,7 @@ class UIManager {
         // Initialize UI elements
         this.createPlayerCountTab();
         this.stylePlayersList();
-        this.createLeaderboardPanel();
+        // Leaderboard is now handled by LeaderboardUI
         
         // Register global access
         window.uiManager = this;
@@ -88,57 +88,6 @@ class UIManager {
             playersList.style.display = 'none'; // Hidden by default
         }
         this.playersList = playersList;
-    }
-    
-    /**
-     * Create the leaderboard panel
-     */
-    createLeaderboardPanel() {
-        // Create leaderboard container
-        const leaderboardPanel = document.createElement('div');
-        leaderboardPanel.id = 'leaderboardPanel';
-        leaderboardPanel.className = 'leaderboard-panel';
-        leaderboardPanel.style.position = 'fixed';
-        leaderboardPanel.style.top = '100px';
-        leaderboardPanel.style.left = '10px';
-        leaderboardPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        leaderboardPanel.style.color = 'white';
-        leaderboardPanel.style.padding = '10px';
-        leaderboardPanel.style.borderRadius = '5px';
-        leaderboardPanel.style.border = '1px solid rgb(0, 233, 150)';
-        leaderboardPanel.style.width = '200px';
-        leaderboardPanel.style.zIndex = '998';
-        leaderboardPanel.style.display = 'none'; // Initially hidden
-        
-        // Create leaderboard header
-        const leaderboardHeader = document.createElement('div');
-        leaderboardHeader.className = 'leaderboard-header';
-        leaderboardHeader.textContent = 'Top Players';
-        leaderboardHeader.style.fontWeight = 'bold';
-        leaderboardHeader.style.textAlign = 'center';
-        leaderboardHeader.style.marginBottom = '10px';
-        leaderboardHeader.style.borderBottom = '1px solid rgb(0, 233, 150)';
-        leaderboardHeader.style.paddingBottom = '5px';
-        
-        // Create leaderboard list
-        const leaderboardList = document.createElement('ul');
-        leaderboardList.id = 'leaderboardList';
-        leaderboardList.className = 'leaderboard-list';
-        leaderboardList.style.listStyle = 'none';
-        leaderboardList.style.padding = '0';
-        leaderboardList.style.margin = '0';
-        leaderboardList.style.maxHeight = '300px';
-        leaderboardList.style.overflowY = 'auto';
-        
-        // Assemble leaderboard
-        leaderboardPanel.appendChild(leaderboardHeader);
-        leaderboardPanel.appendChild(leaderboardList);
-        
-        // Add to game panel
-        document.getElementById('gamePanel').appendChild(leaderboardPanel);
-        
-        this.leaderboardPanel = leaderboardPanel;
-        this.leaderboardList = leaderboardList;
     }
     
     /**
@@ -286,62 +235,6 @@ class UIManager {
             }
             playersListItems.appendChild(li);
         }
-    }
-    
-    /**
-     * Update the leaderboard with new data
-     * @param {Array} leaderboardData - Array of player data for the leaderboard
-     * @param {string} currentUsername - Current player's username
-     */
-    updateLeaderboard(leaderboardData, currentUsername) {
-        if (!this.leaderboardList) return;
-        
-        // Clear existing list
-        this.leaderboardList.innerHTML = '';
-        
-        // Add each player to the list
-        leaderboardData.forEach((player, index) => {
-            const listItem = document.createElement('li');
-            listItem.className = 'leaderboard-item';
-            listItem.style.padding = '5px 10px';
-            listItem.style.marginBottom = '5px';
-            listItem.style.borderRadius = '3px';
-            
-            // Highlight current player
-            if (player.username === currentUsername) {
-                listItem.style.backgroundColor = 'rgba(255, 100, 100, 0.3)';
-                listItem.style.border = '1px solid red';
-            } else {
-                listItem.style.backgroundColor = 'rgba(0, 233, 150, 0.1)';
-                listItem.style.border = '1px solid rgba(0, 233, 150, 0.3)';
-            }
-            
-            // Create rank badge
-            const rankBadge = document.createElement('span');
-            rankBadge.className = 'rank-badge';
-            rankBadge.textContent = `#${index + 1}`;
-            rankBadge.style.marginRight = '8px';
-            rankBadge.style.fontWeight = 'bold';
-            rankBadge.style.color = index === 0 ? 'gold' : (index === 1 ? 'silver' : (index === 2 ? '#cd7f32' : 'white'));
-            
-            // Create player info
-            const playerInfo = document.createElement('span');
-            playerInfo.className = 'player-info';
-            playerInfo.innerHTML = `<strong>[${player.level}] ${player.username}</strong>`;
-            
-            // If player has a title, add it
-            if (player.title && player.title !== 'Newcomer') {
-                playerInfo.innerHTML += `<br><small>${player.title}</small>`;
-            }
-            
-            // Assemble list item
-            listItem.appendChild(rankBadge);
-            listItem.appendChild(playerInfo);
-            this.leaderboardList.appendChild(listItem);
-        });
-        
-        // Show leaderboard
-        this.leaderboardPanel.style.display = 'block';
     }
     
     /**
@@ -586,19 +479,17 @@ class UIManager {
             this.playerCountTab.parentNode.removeChild(this.playerCountTab);
         }
         
-        // Remove leaderboard panel
-        if (this.leaderboardPanel && this.leaderboardPanel.parentNode) {
-            this.leaderboardPanel.parentNode.removeChild(this.leaderboardPanel);
-        }
-        
         // Remove register panel
         if (this.registerPanel && this.registerPanel.parentNode) {
             this.registerPanel.parentNode.removeChild(this.registerPanel);
         }
         
-        // Remove any other created elements...
+        // We don't need to clean up leaderboard panel here - LeaderboardUI handles that
     }
 }
 
-// Make the UIManager class globally available
-window.UIManager = UIManager; 
+// Make the UIManager class globally available for backward compatibility
+window.UIManager = UIManager;
+
+// Add default export
+export default UIManager; 

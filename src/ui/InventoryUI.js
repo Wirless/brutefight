@@ -3,6 +3,10 @@
  * 
  * Handles the rendering and interaction of the player inventory UI
  */
+
+// Import any required dependencies here
+// import { Inventory } from '../managers/InventoryManager';
+
 class InventoryUI {
     /**
      * @param {Game} game - The main game instance
@@ -893,5 +897,8 @@ class InventoryUI {
     }
 }
 
-// Make globally available
-window.InventoryUI = InventoryUI; 
+// Make the class globally available for backward compatibility
+window.InventoryUI = InventoryUI;
+
+// Export the class for ES modules
+export default InventoryUI; 

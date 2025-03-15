@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiplayer 2D Game</title>
+    <title>BruteFight</title>
     <style>
         body {
             margin: 0;
@@ -19,7 +19,7 @@
             color: #fff;
             text-shadow: 0 0 10px rgba(0, 233, 150, 0.6);
         }
-        #loginPanel {
+        #loginPanel, #registerPanel {
             margin: 20px 0;
             padding: 20px;
             background-color: #333;
@@ -27,6 +27,9 @@
             box-shadow: 0 2px 10px rgba(0, 233, 150, 0.3);
             text-align: center;
             width: 300px;
+        }
+        #registerPanel {
+            display: none;
         }
         #gamePanel {
             display: none;
@@ -210,10 +213,22 @@
             margin-left: 5px;
             display: none;
         }
+        .switch-panel {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .switch-panel a {
+            color: rgb(0, 233, 150);
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .switch-panel a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
-    <h1>Multiplayer 2D Game</h1>
+    <h1>BruteFight - Multiplayer 2D Game</h1>
     
     <!-- Login Panel -->
     <div id="loginPanel">
@@ -226,6 +241,28 @@
         </div>
         <button id="loginButton">Join Game</button>
         <p id="loginStatus"></p>
+        <div class="switch-panel">
+            <p>Don't have an account? <a id="showRegisterLink">Register</a></p>
+        </div>
+    </div>
+    
+    <!-- Register Panel -->
+    <div id="registerPanel">
+        <h2>Register</h2>
+        <div class="form-group">
+            <input type="text" id="registerUsername" placeholder="Choose a username">
+        </div>
+        <div class="form-group">
+            <input type="password" id="registerPassword" placeholder="Choose a password">
+        </div>
+        <div class="form-group">
+            <input type="email" id="registerEmail" placeholder="Enter your email">
+        </div>
+        <button id="registerButton">Create Account</button>
+        <p id="registerStatus"></p>
+        <div class="switch-panel">
+            <p>Already have an account? <a id="showLoginLink">Login</a></p>
+        </div>
     </div>
     
     <!-- Game Panel -->
@@ -262,17 +299,145 @@
         </div>
     </div>
     
-    <!-- Socket.io library -->
+    <!-- Socket.io client -->
     <script src="/socket.io/socket.io.js"></script>
     
-    <!-- Add this before the game.js script -->
-    <script src="ores.js"></script>
-    <script src="attacks.js"></script>
-    <script src="equipment.js"></script>
-    <script src="oreManager.js"></script>
-    <script src="playerProgression.js"></script>
-    <script src="experienceOrbs.js"></script>
-    <script src="skills.js"></script>
-    <script src="game.js"></script>
+    <!-- Main game script - using ES modules -->
+    <script type="module" src="/src/main.js"></script>
+    
+    <!-- Auth script for login/register -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM elements
+            const loginPanel = document.getElementById('loginPanel');
+            const registerPanel = document.getElementById('registerPanel');
+            const showRegisterLink = document.getElementById('showRegisterLink');
+            const showLoginLink = document.getElementById('showLoginLink');
+            const loginButton = document.getElementById('loginButton');
+            const registerButton = document.getElementById('registerButton');
+            const loginStatus = document.getElementById('loginStatus');
+            const registerStatus = document.getElementById('registerStatus');
+            
+            // Show register panel
+            showRegisterLink.addEventListener('click', function() {
+                loginPanel.style.display = 'none';
+                registerPanel.style.display = 'block';
+            });
+            
+            // Show login panel
+            showLoginLink.addEventListener('click', function() {
+                registerPanel.style.display = 'none';
+                loginPanel.style.display = 'block';
+            });
+            
+            // Handle register
+            registerButton.addEventListener('click', function() {
+                const username = document.getElementById('registerUsername').value;
+                const password = document.getElementById('registerPassword').value;
+                const email = document.getElementById('registerEmail').value;
+                
+                if (!username || !password || !email) {
+                    registerStatus.textContent = 'Please fill in all fields';
+                    return;
+                }
+                
+                // Send register request
+                fetch('/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password, email })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        registerStatus.textContent = 'Account created successfully! You can now login.';
+                        // Auto-fill login form
+                        document.getElementById('usernameInput').value = username;
+                        // Switch to login panel after 2 seconds
+                        setTimeout(() => {
+                            registerPanel.style.display = 'none';
+                            loginPanel.style.display = 'block';
+                        }, 2000);
+                    } else {
+                        registerStatus.textContent = data.message || 'Error creating account';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    registerStatus.textContent = 'Error connecting to server';
+                });
+            });
+            
+            // Handle login (this will be handled by the Socket.io connection in main.js)
+            loginButton.addEventListener('click', function() {
+                const username = document.getElementById('usernameInput').value;
+                const password = document.getElementById('passwordInput').value;
+                
+                if (!username || !password) {
+                    loginStatus.textContent = 'Please enter username and password';
+                    return;
+                }
+                
+                // Create a socket connection directly if game isn't initialized yet
+                if (window.game && window.game.socket) {
+                    window.game.socket.login(username, password);
+                } else {
+                    // Create a temporary socket connection for login
+                    const socket = io.connect(window.location.origin);
+                    
+                    // Set up login event handlers
+                    socket.on('loginSuccess', function(data) {
+                        console.log('Login successful:', data);
+                        
+                        // Hide login panel and show game panel
+                        document.getElementById('loginPanel').style.display = 'none';
+                        document.getElementById('gamePanel').style.display = 'block';
+                        
+                        // Store auth token if provided
+                        if (data.token) {
+                            localStorage.setItem('authToken', data.token);
+                        }
+                        
+                        // Store player data
+                        if (data.playerData) {
+                            localStorage.setItem('playerSave', JSON.stringify({
+                                username: username,
+                                playerData: data.playerData
+                            }));
+                        }
+                        
+                        // Refresh the page to initialize the game with the logged-in user
+                        window.location.reload();
+                    });
+                    
+                    socket.on('loginFailed', function(data) {
+                        loginStatus.textContent = data.message || 'Login failed';
+                    });
+                    
+                    // Try to get local save data
+                    let localSave = null;
+                    try {
+                        const savedData = localStorage.getItem('playerSave');
+                        if (savedData) {
+                            localSave = JSON.parse(savedData);
+                        }
+                    } catch (err) {
+                        console.error('Error loading local save:', err);
+                    }
+                    
+                    // Send login request
+                    socket.emit('login', { 
+                        username, 
+                        password,
+                        localSave
+                    });
+                    
+                    loginStatus.textContent = 'Connecting to server...';
+                }
+            });
+        });
+    </script>
 </body>
 </html> 

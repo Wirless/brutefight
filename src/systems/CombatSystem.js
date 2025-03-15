@@ -717,3 +717,5 @@ class CombatSystem {
 
 // Make the CombatSystem class globally available
 window.CombatSystem = CombatSystem; 
+
+export default CombatSystem;

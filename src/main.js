@@ -1,9 +1,27 @@
 /**
- * main.js
+ * main.js - Main entry point for the game
  * 
- * Main entry point for the game. Initializes all game systems
- * and starts the game.
+ * This file imports and initializes all necessary game components
  */
+
+// Import managers
+import { EquipmentManager, InventoryManager, PlayerManager, ChatManager, UIManager, OreManager } from './managers/index.js';
+
+// Import UI components
+import { EquipmentUI, InventoryUI, LeaderboardUI } from './ui/index.js';
+import { MinimapRenderer, Renderer } from './rendering/index.js';
+
+// Import game core
+import { Game } from './core/index.js';
+
+// Import network functionality
+import Socket from './network/index.js';
+
+// Import entities
+import { Player, ExperienceOrb, Item, Ore } from './entities/index.js';
+
+// Import systems (all systems are exported from the index file)
+import './systems/index.js';
 
 // Wait for the DOM to be fully loaded
 document.addEventListener('DOMContentLoaded', function() {
@@ -15,18 +33,37 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     
+    // Check if user is already logged in
+    const authToken = localStorage.getItem('authToken');
+    const playerSave = localStorage.getItem('playerSave');
+    
+    if (authToken && playerSave) {
+        // User is already logged in, show game panel
+        document.getElementById('loginPanel').style.display = 'none';
+        document.getElementById('gamePanel').style.display = 'block';
+    }
+    
     // Preload assets
     preloadAssets(() => {
         // Create and initialize the game
-        const game = new Game();
+        const game = new Game({
+            debug: true,  // Enable debug mode
+            authToken: authToken
+        });
         
-        // Make game globally available
+        // Make game globally available for debugging
         window.game = game;
         
         // Initialize game
         game.init();
         
         console.log('Game initialized successfully!');
+        
+        // If we have an auth token, try to auto-login
+        if (authToken && game.socket) {
+            console.log('Attempting auto-login with token');
+            game.socket.login(null, null, authToken);
+        }
     });
 });
 
@@ -50,7 +87,10 @@ function checkBrowserSupport() {
         // localStorage might be disabled
     }
     
-    return hasCanvas && hasWebSocket && hasLocalStorage;
+    // Check for ES6 Module support
+    const hasModules = 'noModule' in document.createElement('script');
+    
+    return hasCanvas && hasWebSocket && hasLocalStorage && hasModules;
 }
 
 /**

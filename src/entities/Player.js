@@ -532,32 +532,20 @@ class Player {
     }
     
     /**
-     * Update player position on the server
+     * Update server position when necessary
      */
     updateServerPosition() {
-        if (this.isCurrentPlayer && window.socket) {
-            // Only send update if position changed significantly or enough time passed
-            const now = Date.now();
-            const positionDelta = Math.sqrt(
-                Math.pow(this.x - this.serverX, 2) + 
-                Math.pow(this.y - this.serverY, 2)
-            );
-            
-            // Send update if: 
-            // 1. Position changed by more than 1 pixel, or
-            // 2. It's been more than 100ms since last update
-            if (positionDelta > 1 || now - this.lastUpdate > 100) {
-                window.socket.emit('updatePosition', {
-                    x: this.x,
-                    y: this.y,
-                    direction: this.animation.direction
-                });
-                
-                this.serverX = this.x;
-                this.serverY = this.y;
-                this.lastUpdate = now;
-            }
-        }
+        if (!this.game || !this.game.socket) return;
+        
+        // Send updated position to server using the Socket module
+        this.game.socket.sendMovement(this.x, this.y);
+        
+        // Track last update time
+        this.lastServerUpdate = Date.now();
+        
+        // Update movement flags and metrics
+        this.hasMovedSinceLastUpdate = false;
+        this.distanceMoved = 0;
     }
     
     /**
@@ -952,3 +940,5 @@ class Player {
 
 // Make the Player class globally available
 window.Player = Player; 
+
+export default Player;

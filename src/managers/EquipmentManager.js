@@ -4,6 +4,8 @@
  * Manages player equipment including equipping/unequipping items,
  * handling equipment effects, and managing quick slots.
  */
+import { EquipmentUI } from '../ui';
+
 class EquipmentManager {
     /**
      * @param {Game} game - The main game instance
@@ -50,14 +52,29 @@ class EquipmentManager {
         // Reference to inventory
         this.inventory = null;
         
-        // Create equipment UI
-        this.ui = new window.Equipment.EquipmentUI(this, {
-            showQuickbar: true,
-            showCompactDisplay: true
-        });
+        // Create equipment UI if the class is available
+        try {
+            // First try to use the imported EquipmentUI if available
+            const UIClass = window.EquipmentUI || EquipmentUI;
+            this.ui = new UIClass(this, {
+                showQuickbar: true,
+                showCompactDisplay: true
+            });
+        } catch (error) {
+            console.error("Error creating EquipmentUI:", error);
+            this.ui = null;
+        }
         
         // Register for global access
         window.equipmentManager = this;
+    }
+    
+    /**
+     * Set the UI reference manually if needed
+     * @param {EquipmentUI} ui - The UI instance to use
+     */
+    setUI(ui) {
+        this.ui = ui;
     }
     
     /**
@@ -464,5 +481,8 @@ class EquipmentManager {
     }
 }
 
-// Make the EquipmentManager class globally available
-window.EquipmentManager = EquipmentManager; 
+// Make the EquipmentManager class globally available for backward compatibility
+window.EquipmentManager = EquipmentManager;
+
+// Add default export
+export default EquipmentManager; 

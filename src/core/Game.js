@@ -4,12 +4,17 @@
  * This class serves as the central controller for the game,
  * coordinating between different systems and managers.
  */
+// Import from index files for consistent approaches
+import { LeaderboardUI, MinimapRenderer, EquipmentUI } from '../ui';
+import { EquipmentManager } from '../managers';
+import Socket from '../network/Socket.js';
+
 class Game {
     /**
      * Initialize the game instance
-     * @param {Object} config - Configuration options
+     * @param {Object} options - Configuration options
      */
-    constructor(config = {}) {
+    constructor(options = {}) {
         // Core systems
         this.canvas = document.getElementById('gameCanvas');
         this.ctx = this.canvas.getContext('2d');
@@ -51,19 +56,12 @@ class Game {
 
         // Initialize the auth system
         this.auth = {
-            token: null,
-            isLoggedIn: false
+            token: options.authToken || null,
+            isLoggedIn: !!options.authToken
         };
 
-        // Try to load auth token from localStorage
-        try {
-            const savedAuth = localStorage.getItem('authToken');
-            if (savedAuth) {
-                this.auth.token = savedAuth;
-            }
-        } catch (err) {
-            console.error('Error loading auth token:', err);
-        }
+        // Debug mode
+        this.debug = options.debug || false;
 
         // Bind methods to this instance
         this.gameLoop = this.gameLoop.bind(this);
@@ -71,6 +69,24 @@ class Game {
         this.handleKeyUp = this.handleKeyUp.bind(this);
         this.handleMouseMove = this.handleMouseMove.bind(this);
         this.handleMouseDown = this.handleMouseDown.bind(this);
+
+        // Initialize UI components
+        this.leaderboardUI = null;
+        this.minimapRenderer = null;
+        
+        // Initialize global objects for ore hit effects
+        this.initGlobalObjects();
+    }
+    
+    /**
+     * Initialize global objects needed for various systems
+     */
+    initGlobalObjects() {
+        // Rock hit effect globals
+        if (!window.hitRocks) window.hitRocks = new Set();
+        if (!window.rockHitTimes) window.rockHitTimes = new Map();
+        if (!window.rockParticles) window.rockParticles = [];
+        if (!window.rockHitDuration) window.rockHitDuration = 500; // ms
     }
 
     /**
@@ -87,6 +103,9 @@ class Game {
 
         // Initialize UI components
         this.initUI();
+        
+        // Initialize global objects (ensure they exist)
+        this.initGlobalObjects();
 
         return this;
     }
@@ -95,17 +114,8 @@ class Game {
      * Initialize WebSocket connection and set up event handlers
      */
     initSocket() {
-        this.socket = io.connect(window.location.origin);
-        window.socket = this.socket; // Make socket globally available
-
-        // Set up socket event handlers
-        this.socket.on('loginSuccess', (data) => this.handleLoginSuccess(data));
-        this.socket.on('loginFailed', (data) => this.handleLoginFailed(data));
-        this.socket.on('playerList', (data) => this.handlePlayerList(data));
-        this.socket.on('playerDisconnected', (username) => this.handlePlayerDisconnected(username));
-        this.socket.on('playerJoined', (username) => this.handlePlayerJoined(username));
-        this.socket.on('chatMessage', (msg) => this.handleChatMessage(msg));
-        this.socket.on('leaderboardData', (data) => this.handleLeaderboardData(data));
+        // Create new Socket instance
+        this.socket = new Socket(this, { debug: this.debug });
     }
 
     /**
@@ -114,6 +124,15 @@ class Game {
     initUI() {
         // Create UI elements that aren't part of the DOM initially
         this.createDebugInfo();
+        
+        // Initialize UI Manager
+        this.uiManager = new window.UIManager(this);
+        
+        // Initialize Leaderboard UI
+        this.leaderboardUI = new LeaderboardUI(this);
+        
+        // Initialize Minimap Renderer
+        this.minimapRenderer = new MinimapRenderer(this);
     }
 
     /**
@@ -194,7 +213,7 @@ class Game {
         this.updateDebugInfo();
         
         // Request leaderboard data
-        this.socket.emit('requestLeaderboard');
+        this.socket.requestLeaderboard();
     }
 
     /**
@@ -225,45 +244,121 @@ class Game {
         requestAnimationFrame(this.gameLoop);
         
         // Add welcome message to chat
-        this.chatManager.addMessage({
-            type: 'system',
-            message: `Welcome to the game, ${this.username}! Use WASD to move and SPACE to attack.`
-        });
+        if (this.chatManager && this.chatManager.addMessage) {
+            this.chatManager.addMessage({
+                type: 'system',
+                message: `Welcome to the game, ${this.username}! Use WASD to move and SPACE to attack.`
+            });
+        } else {
+            console.log(`Welcome to the game, ${this.username}! Use WASD to move and SPACE to attack.`);
+        }
     }
 
     /**
      * Initialize all game managers
      */
     initManagers() {
-        // Create managers
-        this.oreManager = new window.OreManager().init();
-        this.playerManager = new PlayerManager(this);
-        this.inventoryManager = new InventoryManager(this);
-        this.chatManager = new ChatManager(this);
-        this.uiManager = new UIManager(this);
-        this.renderer = new Renderer(this);
-        
-        // Make managers globally available if needed
-        window.equipmentManager = this.equipmentManager;
-        window.playerInventory = this.inventoryManager.inventory;
-        window.playerInventoryUI = this.inventoryManager.ui;
-        window.expOrbManager = new window.ExperienceOrbManager();
-        window.ores = this.oreManager.getOres();
-        
-        // Initialize attack system
-        this.initAttackSystem();
+        try {
+            // Create managers
+            if (window.OreManager) {
+                this.oreManager = new window.OreManager().init();
+            } else {
+                console.error("OreManager not found");
+            }
+            
+            if (window.PlayerManager) {
+                this.playerManager = new window.PlayerManager(this);
+            } else {
+                console.error("PlayerManager not found");
+            }
+            
+            if (window.InventoryManager) {
+                this.inventoryManager = new window.InventoryManager(this);
+            } else {
+                console.error("InventoryManager not found");
+            }
+            
+            if (window.ChatManager) {
+                this.chatManager = new window.ChatManager(this);
+            } else {
+                console.error("ChatManager not found");
+            }
+            
+            if (window.UIManager) {
+                this.uiManager = new window.UIManager(this);
+            } else {
+                console.error("UIManager not found");
+            }
+            
+            if (window.Renderer) {
+                this.renderer = new window.Renderer(this);
+            } else {
+                console.error("Renderer not found");
+            }
+            
+            // Initialize equipment system using imported modules
+            try {
+                this.equipmentManager = new EquipmentManager(this);
+                this.equipmentUI = new EquipmentUI(this.equipmentManager);
+                this.equipmentManager.setUI(this.equipmentUI);
+            } catch (error) {
+                console.error("Error initializing equipment system:", error);
+                // Fallback to window objects if available
+                if (window.EquipmentManager && window.EquipmentUI) {
+                    this.equipmentManager = new window.EquipmentManager(this);
+                    this.equipmentUI = new window.EquipmentUI(this.equipmentManager);
+                    this.equipmentManager.setUI(this.equipmentUI);
+                } else {
+                    console.error("EquipmentManager or EquipmentUI not found");
+                }
+            }
+            
+            // Initialize leaderboard
+            this.leaderboardUI = new LeaderboardUI(this);
+            
+            // Make managers globally available if needed
+            if (this.equipmentManager) window.equipmentManager = this.equipmentManager;
+            if (this.inventoryManager && this.inventoryManager.inventory) window.playerInventory = this.inventoryManager.inventory;
+            if (this.inventoryManager && this.inventoryManager.ui) window.playerInventoryUI = this.inventoryManager.ui;
+            
+            if (window.ExperienceOrbManager) {
+                window.expOrbManager = new window.ExperienceOrbManager(this);
+            } else {
+                console.error("ExperienceOrbManager not found");
+            }
+            
+            if (this.oreManager) window.ores = this.oreManager.getOres();
+            
+            // Connect inventory to equipment manager
+            if (this.equipmentManager && this.inventoryManager && this.inventoryManager.inventory) {
+                this.equipmentManager.setInventory(this.inventoryManager.inventory);
+            }
+            
+            // Initialize attack system
+            this.initAttackSystem();
+        } catch (error) {
+            console.error("Error initializing managers:", error);
+        }
     }
 
     /**
      * Initialize the attack system
      */
     initAttackSystem() {
-        // Set up available attacks
-        this.availableAttacks = {
-            pickaxe: new window.Attacks.PickaxeAttack(this.myPlayer, this.ctx),
-            axe: new window.Attacks.AxeAttack(this.myPlayer, this.ctx)
-        };
-        this.currentAttack = this.availableAttacks.pickaxe; // Default attack
+        try {
+            // Set up available attacks
+            if (window.Attacks) {
+                this.availableAttacks = {
+                    pickaxe: new window.Attacks.PickaxeAttack(this.myPlayer, this.ctx),
+                    axe: new window.Attacks.AxeAttack(this.myPlayer, this.ctx)
+                };
+                this.currentAttack = this.availableAttacks.pickaxe; // Default attack
+            } else {
+                console.error("Attacks not found");
+            }
+        } catch (error) {
+            console.error("Error initializing attack system:", error);
+        }
     }
 
     /**
@@ -311,7 +406,7 @@ class Game {
         
         // Send update to server
         if (this.socket && this.socket.connected) {
-            this.socket.emit('updatePlayerData', {
+            this.socket.sendPlayerUpdate({
                 experience: this.myPlayer.experience,
                 level: this.myPlayer.level,
                 maxExperience: this.myPlayer.maxExperience,
@@ -393,13 +488,17 @@ class Game {
      */
     handlePlayerDisconnected(disconnectedUsername) {
         console.log(`Player disconnected: ${disconnectedUsername}`);
-        this.uiManager.updatePlayersList(this.players, this.username);
+        if (this.uiManager) {
+            this.uiManager.updatePlayersList(this.players, this.username);
+        }
         
         // Add disconnect message to chat
-        this.chatManager.addMessage({
-            type: 'system',
-            message: `${disconnectedUsername} has left the game.`
-        });
+        if (this.chatManager && this.chatManager.addMessage) {
+            this.chatManager.addMessage({
+                type: 'system',
+                message: `${disconnectedUsername} has left the game.`
+            });
+        }
     }
 
     /**
@@ -408,10 +507,12 @@ class Game {
      */
     handlePlayerJoined(joinedUsername) {
         // Add welcome message to chat
-        this.chatManager.addMessage({
-            type: 'system',
-            message: `${joinedUsername} has joined the game.`
-        });
+        if (this.chatManager && this.chatManager.addMessage) {
+            this.chatManager.addMessage({
+                type: 'system',
+                message: `${joinedUsername} has joined the game.`
+            });
+        }
     }
 
     /**
@@ -419,7 +520,9 @@ class Game {
      * @param {Object} msg - Chat message data
      */
     handleChatMessage(msg) {
-        this.chatManager.addMessage(msg);
+        if (this.chatManager && this.chatManager.addMessage) {
+            this.chatManager.addMessage(msg);
+        }
     }
 
     /**
@@ -427,7 +530,9 @@ class Game {
      * @param {Array} data - Leaderboard data
      */
     handleLeaderboardData(data) {
-        this.uiManager.updateLeaderboard(data, this.username);
+        if (this.leaderboardUI) {
+            this.leaderboardUI.update(data, this.username);
+        }
     }
 
     /**
@@ -453,20 +558,24 @@ class Game {
         }
         
         // Weapon switching
-        if (key === '1') {
+        if (key === '1' && this.availableAttacks && this.availableAttacks.pickaxe) {
             this.currentAttack = this.availableAttacks.pickaxe;
-            this.chatManager.addMessage({
-                type: 'system',
-                message: `${this.username} equips a pickaxe.`
-            });
+            if (this.chatManager && this.chatManager.addMessage) {
+                this.chatManager.addMessage({
+                    type: 'system',
+                    message: `${this.username} equips a pickaxe.`
+                });
+            }
         }
         
-        if (key === '2') {
+        if (key === '2' && this.availableAttacks && this.availableAttacks.axe) {
             this.currentAttack = this.availableAttacks.axe;
-            this.chatManager.addMessage({
-                type: 'system',
-                message: `${this.username} equips an axe.`
-            });
+            if (this.chatManager && this.chatManager.addMessage) {
+                this.chatManager.addMessage({
+                    type: 'system',
+                    message: `${this.username} equips an axe.`
+                });
+            }
         }
         
         // Toggle equipment panel with 'E' key
@@ -567,12 +676,14 @@ class Game {
         }
         
         // Perform attack
-        if (this.currentAttack.start(direction)) {
+        if (this.currentAttack && this.currentAttack.start && this.currentAttack.start(direction)) {
             // Add attack message to chat
-            this.chatManager.addMessage({
-                type: 'system',
-                message: `${this.username} swings their ${this.currentAttack === this.availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
-            });
+            if (this.chatManager && this.chatManager.addMessage) {
+                this.chatManager.addMessage({
+                    type: 'system',
+                    message: `${this.username} swings their ${this.currentAttack === this.availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
+                });
+            }
         }
     }
 
@@ -599,12 +710,14 @@ class Game {
      */
     performAttack() {
         // Use the attack system's start method
-        if (this.currentAttack.start(this.attackDirection)) {
+        if (this.currentAttack && this.currentAttack.start && this.currentAttack.start(this.attackDirection)) {
             // Add attack message to chat
-            this.chatManager.addMessage({
-                type: 'system',
-                message: `${this.username} swings their ${this.currentAttack === this.availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
-            });
+            if (this.chatManager && this.chatManager.addMessage) {
+                this.chatManager.addMessage({
+                    type: 'system',
+                    message: `${this.username} swings their ${this.currentAttack === this.availableAttacks.pickaxe ? 'pickaxe' : 'axe'}!`
+                });
+            }
             
             // Visual feedback for attack
             this.createAttackVisualEffects();
@@ -781,16 +894,13 @@ class Game {
     }
 
     /**
-     * Send position updates to server
+     * Update server position
      */
     updateServerPosition() {
         if (!this.myPlayer || !this.socket) return;
         
-        // Send updated position to server
-        this.socket.emit('move', {
-            x: this.myPlayer.x,
-            y: this.myPlayer.y
-        });
+        // Send updated position to server using the Socket module
+        this.socket.sendMovement(this.myPlayer.x, this.myPlayer.y);
         
         // Save player data locally on server update
         this.savePlayerDataLocally();
@@ -876,8 +986,10 @@ class Game {
         // Draw attack effect
         this.renderAttackEffect();
         
-        // Update minimap
-        this.renderMinimap();
+        // Update minimap using the dedicated renderer
+        if (this.minimapRenderer) {
+            this.minimapRenderer.render();
+        }
         
         // Update position display
         if (this.myPlayer) {
@@ -950,14 +1062,6 @@ class Game {
             this.currentAttack.draw(this.cameraX, this.cameraY);
         }
     }
-
-    /**
-     * Render minimap
-     */
-    renderMinimap() {
-        // Base implementation - would be moved to MinimapRenderer.js
-        // ... minimap rendering code ...
-    }
 }
 
 // Make the Game class globally available
@@ -974,3 +1078,5 @@ document.addEventListener('DOMContentLoaded', () => {
     // Make game globally available
     window.game = game;
 }); 
+
+export default Game;

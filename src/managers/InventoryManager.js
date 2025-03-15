@@ -4,6 +4,10 @@
  * Manages the player's inventory system including items,
  * inventory slots, and the inventory UI.
  */
+
+// Import required modules
+import { Inventory } from '../equipment';
+
 class InventoryManager {
     /**
      * @param {Game} game - The main game instance
@@ -12,7 +16,7 @@ class InventoryManager {
         this.game = game;
         
         // Initialize inventory with 16 slots
-        this.inventory = new window.Equipment.Inventory(16);
+        this.inventory = new Inventory(16);
         
         // Create inventory UI using our new component
         this.ui = new window.InventoryUI(game, {
@@ -365,4 +369,7 @@ class InventoryManager {
 }
 
 // Make the InventoryManager class globally available
-window.InventoryManager = InventoryManager; 
+window.InventoryManager = InventoryManager;
+
+// Add default export
+export default InventoryManager; 

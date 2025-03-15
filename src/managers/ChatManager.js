@@ -121,12 +121,10 @@ class ChatManager {
     sendMessage() {
         const message = this.chatInput.value.trim();
         if (message) {
-            // Send message to server
-            this.game.socket.emit('chatMessage', { 
-                username: this.game.username, 
-                message,
-                type: 'user'
-            });
+            // Send message to server using the Socket module
+            if (this.game.socket) {
+                this.game.socket.sendChatMessage(message, this.game.username);
+            }
             
             // Clear input
             this.chatInput.value = '';
@@ -207,13 +205,16 @@ class ChatManager {
     }
     
     /**
-     * Check if chat is focused
-     * @returns {boolean} - Whether chat is focused
+     * Check if chat input is focused
+     * @returns {boolean} whether chat input is focused
      */
     isInputFocused() {
         return this.isChatFocused;
     }
 }
 
-// Make the ChatManager class globally available
-window.ChatManager = ChatManager; 
+// Make the ChatManager class globally available for backward compatibility
+window.ChatManager = ChatManager;
+
+// Add default export
+export default ChatManager; 

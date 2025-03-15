@@ -37,13 +37,85 @@ class OreManager {
      * @returns {OreManager} - This instance for chaining
      */
     init() {
-        // Initialize ore types from the global Ores object
+        console.log("Initializing OreManager...");
+        
+        // First try to get constructors from window.Ores (from entities/Ore.js)
         if (window.Ores) {
-            this.oreTypes = window.Ores;
-            console.log("Initialized ore types:", Object.keys(this.oreTypes));
-        } else {
-            console.error("Ore types not available. Make sure Ores are defined globally.");
+            console.log("Found window.Ores, checking if it contains constructor functions...");
+            
+            // Verify if window.Ores contains constructor functions
+            let hasValidConstructors = true;
+            for (const type in this.config.typeWeights) {
+                if (typeof window.Ores[type] !== 'function') {
+                    console.warn(`Ore type ${type} is not a constructor function in window.Ores`);
+                    hasValidConstructors = false;
+                    break;
+                }
+            }
+            
+            if (hasValidConstructors) {
+                console.log("Using constructor functions from window.Ores");
+                this.oreTypes = window.Ores;
+            } else {
+                console.warn("window.Ores exists but doesn't contain all required constructor functions");
+            }
         }
+        
+        // If we don't have valid constructors yet, try to create them using window.Ore (base class)
+        if (!this.oreTypes || Object.keys(this.oreTypes).length === 0) {
+            if (window.Ore) {
+                console.log("Using window.Ore to create fallback constructors");
+                
+                // If we have ore data from systems/ores.js, use it for colors
+                const oreData = window.OresData ? window.OresData.ORE_DATA : null;
+                
+                // Create constructor functions using the base Ore class
+                this.oreTypes = {
+                    stone: (x, y) => new window.Ore({
+                        type: 'stone',
+                        name: 'Stone',
+                        x, y,
+                        color: oreData?.ROCK?.color || '#aaa',
+                        radius: 20
+                    }),
+                    copper: (x, y) => new window.Ore({
+                        type: 'copper',
+                        name: 'Copper',
+                        x, y,
+                        color: oreData?.COPPER?.color || '#d27d2c',
+                        radius: 22
+                    }),
+                    iron: (x, y) => new window.Ore({
+                        type: 'iron',
+                        name: 'Iron',
+                        x, y,
+                        color: oreData?.IRON?.color || '#a19d94',
+                        radius: 25
+                    }),
+                    gold: (x, y) => new window.Ore({
+                        type: 'gold',
+                        name: 'Gold',
+                        x, y,
+                        color: oreData?.GOLD?.color || '#ffd700',
+                        radius: 18
+                    }),
+                    diamond: (x, y) => new window.Ore({
+                        type: 'diamond',
+                        name: 'Diamond',
+                        x, y,
+                        color: oreData?.DIAMOND?.color || '#88c0ee',
+                        radius: 16
+                    })
+                };
+                
+                console.log("Created fallback constructors for ore types:", Object.keys(this.oreTypes));
+            } else {
+                console.error("No valid ore constructors found and no fallback available");
+            }
+        }
+        
+        // Log the final ore types we're using
+        console.log("Initialized ore types:", Object.keys(this.oreTypes));
         
         return this;
     }
@@ -72,64 +144,103 @@ class OreManager {
         }
         
         const generatedOres = [];
-        const safetyCounter = count * 3; // Prevent infinite loops
+        const safetyCounter = count * 5; // To prevent infinite loops
         let attempts = 0;
+        
+        // Distance to avoid generating ores too close to the player
+        const playerSafeZone = 150;
         
         while (generatedOres.length < count && attempts < safetyCounter) {
             attempts++;
             
-            // Calculate random position within generation radius
+            // Generate random position within the radius
+            const radius = Math.random() * this.config.generationRadius;
             const angle = Math.random() * Math.PI * 2;
-            const distance = Math.random() * this.config.generationRadius;
             
-            const x = centerX + Math.cos(angle) * distance;
-            const y = centerY + Math.sin(angle) * distance;
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
             
-            // Check if position is far enough from existing ores
-            if (this.isPositionValid(x, y, this.config.minDistance)) {
-                // Check if position is not too close to player
-                const distToPlayer = Math.sqrt(
-                    Math.pow(x - playerX, 2) + 
-                    Math.pow(y - playerY, 2)
-                );
+            // Check if too close to player
+            const distToPlayer = Math.sqrt(
+                Math.pow(x - playerX, 2) + 
+                Math.pow(y - playerY, 2)
+            );
+            
+            if (distToPlayer < playerSafeZone) {
+                continue; // Too close to player, retry
+            }
+            
+            // Check if too close to other ores
+            if (this.isTooCloseToOtherOres(x, y)) {
+                continue; // Too close to other ores, retry
+            }
+            
+            // Choose an ore type based on weights
+            const oreType = this.chooseOreType();
+            if (!oreType) {
+                console.error("Failed to select an ore type");
+                continue;
+            }
+            
+            // Create the ore using the correct constructor
+            try {
+                // Get the constructor function from the oreTypes object
+                const OreConstructor = this.oreTypes[oreType];
                 
-                if (distToPlayer < 100) {
-                    // Too close to player, try again
+                // Make sure it's a constructor function or factory function
+                if (typeof OreConstructor !== 'function') {
+                    console.error(`Invalid ore type: ${oreType} is not a constructor`);
                     continue;
                 }
                 
-                // Choose an ore type based on weights
-                const oreType = this.chooseOreType();
-                if (!oreType) {
-                    console.error("Failed to select an ore type");
+                // Create a new ore instance
+                const ore = OreConstructor(x, y);
+                
+                if (!ore) {
+                    console.error(`Failed to create ore of type ${oreType}`);
                     continue;
                 }
                 
-                // Create the ore
-                try {
-                    const ore = new this.oreTypes[oreType](x, y);
-                    ore.id = ++this.lastOreId;
-                    this.ores.push(ore);
-                    generatedOres.push(ore);
-                } catch (error) {
-                    console.error(`Error creating ore of type ${oreType}:`, error);
-                }
+                ore.id = ++this.lastOreId;
+                this.ores.push(ore);
+                generatedOres.push(ore);
+            } catch (error) {
+                console.error(`Error creating ore of type ${oreType}:`, error);
             }
         }
         
         if (attempts >= safetyCounter) {
-            console.warn(`Reached maximum attempts (${safetyCounter}) when generating ores.`);
+            console.warn(`Hit safety limit when generating ores. Generated ${generatedOres.length} of ${count} requested.`);
         }
         
-        // Update global reference
-        window.ores = this.ores;
-        
+        console.log(`Generated ${generatedOres.length} ores after ${attempts} attempts.`);
         return generatedOres;
     }
     
     /**
-     * Choose a random ore type based on weights
-     * @returns {string} - The selected ore type
+     * Check if a position is too close to other ores
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     * @returns {boolean} - True if too close
+     */
+    isTooCloseToOtherOres(x, y) {
+        for (let i = 0; i < this.ores.length; i++) {
+            const ore = this.ores[i];
+            const distance = Math.sqrt(
+                Math.pow(x - ore.x, 2) + 
+                Math.pow(y - ore.y, 2)
+            );
+            
+            if (distance < this.config.minDistance) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Choose an ore type based on weight
+     * @returns {string} - The chosen ore type
      */
     chooseOreType() {
         // Calculate total weight
@@ -138,324 +249,160 @@ class OreManager {
             totalWeight += this.config.typeWeights[type];
         }
         
-        // Generate random number between 0 and totalWeight
-        const random = Math.random() * totalWeight;
+        // Random value between 0 and total weight
+        let random = Math.random() * totalWeight;
         
-        // Find which ore type the random number falls into
-        let cumulativeWeight = 0;
+        // Find the selected type
         for (const type in this.config.typeWeights) {
-            cumulativeWeight += this.config.typeWeights[type];
-            if (random <= cumulativeWeight) {
+            random -= this.config.typeWeights[type];
+            if (random <= 0) {
                 return type;
             }
         }
         
-        // Fallback to stone if something goes wrong
-        return "stone";
+        // Fallback to stone
+        return 'stone';
     }
     
     /**
-     * Check if position is valid for a new ore
-     * @param {number} x - X position
-     * @param {number} y - Y position
-     * @param {number} minDistance - Minimum distance from other ores
-     * @returns {boolean} - Whether position is valid
-     */
-    isPositionValid(x, y, minDistance) {
-        for (const ore of this.ores) {
-            const distance = Math.sqrt(
-                Math.pow(x - ore.x, 2) + 
-                Math.pow(y - ore.y, 2)
-            );
-            
-            if (distance < minDistance) {
-                return false;
-            }
-        }
-        return true;
-    }
-    
-    /**
-     * Check for collision with any ore
+     * Check if a position collides with any ore
      * @param {number} x - X position
      * @param {number} y - Y position
      * @param {number} radius - Collision radius
-     * @returns {boolean} - Whether there is a collision
+     * @returns {boolean} - True if collision occurs
      */
     checkCollision(x, y, radius) {
-        for (const ore of this.ores) {
-            if (!ore.broken) {
-                const distance = Math.sqrt(
-                    Math.pow(x - ore.x, 2) + 
-                    Math.pow(y - ore.y, 2)
-                );
-                
-                if (distance < radius + ore.radius) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-    
-    /**
-     * Handle collision between player and ores
-     * @param {number} playerX - Player X position
-     * @param {number} playerY - Player Y position
-     * @param {number} playerRadius - Player collision radius
-     * @returns {Object|null} - New position if pushing needed, or null
-     */
-    handlePlayerCollision(playerX, playerY, playerRadius) {
-        // Find nearest colliding ore
-        let nearestOre = null;
-        let nearestDistance = Infinity;
-        
-        for (const ore of this.ores) {
-            if (ore.broken) continue;
-            
-            const distance = Math.sqrt(
-                Math.pow(playerX - ore.x, 2) + 
-                Math.pow(playerY - ore.y, 2)
-            );
-            
-            if (distance < playerRadius + ore.radius && distance < nearestDistance) {
-                nearestOre = ore;
-                nearestDistance = distance;
-            }
-        }
-        
-        if (nearestOre) {
-            // Calculate direction from ore to player
-            const dx = playerX - nearestOre.x;
-            const dy = playerY - nearestOre.y;
-            
-            // Normalize direction
-            const length = Math.sqrt(dx * dx + dy * dy);
-            const ndx = dx / length;
-            const ndy = dy / length;
-            
-            // Calculate how much we need to push the player outward
-            const pushDistance = (playerRadius + nearestOre.radius) - length;
-            
-            // Calculate new position
-            const newX = playerX + ndx * pushDistance;
-            const newY = playerY + ndy * pushDistance;
-            
-            return { x: newX, y: newY };
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Get ore at a position
-     * @param {number} x - X position
-     * @param {number} y - Y position
-     * @param {number} radius - Search radius
-     * @returns {Object|null} - The ore at the position, or null
-     */
-    getOreAt(x, y, radius = 10) {
-        for (const ore of this.ores) {
-            if (ore.broken) continue;
+        for (let i = 0; i < this.ores.length; i++) {
+            const ore = this.ores[i];
+            const oreRadius = ore.radius || 20;
             
             const distance = Math.sqrt(
                 Math.pow(x - ore.x, 2) + 
                 Math.pow(y - ore.y, 2)
             );
             
-            if (distance < radius + ore.radius) {
-                return ore;
+            if (distance < radius + oreRadius) {
+                return true;
             }
         }
-        return null;
-    }
-    
-    /**
-     * Mine an ore at a position
-     * @param {number} x - X position
-     * @param {number} y - Y position
-     * @param {number} damage - Damage to apply
-     * @param {number} radius - Search radius
-     * @returns {Object|boolean} - The mined ore or false if no ore found
-     */
-    mineOreAt(x, y, damage, radius = 30) {
-        const ore = this.getOreAt(x, y, radius);
-        
-        if (ore) {
-            ore.health -= damage;
-            
-            // Generate particles
-            if (ore.generateParticles) {
-                const particles = ore.generateParticles(true);
-                window.rockParticles.push(...particles);
-            }
-            
-            // Check if ore is destroyed
-            if (ore.health <= 0 && !ore.broken) {
-                ore.broken = true;
-                
-                // Generate experience orbs if the function exists
-                if (window.expOrbManager && window.expOrbManager.createExpOrb) {
-                    const expValue = ore.expValue || 5; // Default to 5 if not specified
-                    window.expOrbManager.createExpOrb(ore.x, ore.y, expValue);
-                }
-                
-                // Respawn ore after delay
-                setTimeout(() => {
-                    ore.health = ore.maxHealth;
-                    ore.broken = false;
-                }, ore.respawnTime || 60000); // Default 60 seconds if not specified
-            }
-            
-            return ore;
-        }
-        
         return false;
     }
     
     /**
-     * Draw all ores
+     * Handle player collision with ores
+     * @param {number} playerX - Player X position
+     * @param {number} playerY - Player Y position
+     * @param {number} radius - Player collision radius
+     * @returns {Object|null} - New position or null if no collision
+     */
+    handlePlayerCollision(playerX, playerY, radius) {
+        for (let i = 0; i < this.ores.length; i++) {
+            const ore = this.ores[i];
+            const oreRadius = ore.radius || 20;
+            
+            const dx = playerX - ore.x;
+            const dy = playerY - ore.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // If player is inside ore
+            if (distance < radius + oreRadius) {
+                // Calculate push direction (away from ore center)
+                const pushDistance = (radius + oreRadius) - distance;
+                const angle = Math.atan2(dy, dx);
+                
+                // Calculate new position
+                const newX = playerX + Math.cos(angle) * pushDistance;
+                const newY = playerY + Math.sin(angle) * pushDistance;
+                
+                return { x: newX, y: newY };
+            }
+        }
+        
+        return null; // No collision
+    }
+    
+    /**
+     * Remove an ore from the world
+     * @param {Object} ore - The ore to remove
+     */
+    removeOre(ore) {
+        const index = this.ores.findIndex(o => o.id === ore.id);
+        if (index !== -1) {
+            this.ores.splice(index, 1);
+        }
+    }
+    
+    /**
+     * Draw all ores on the screen
      * @param {CanvasRenderingContext2D} ctx - Canvas context
      * @param {number} cameraX - Camera X position
      * @param {number} cameraY - Camera Y position
      */
     drawOres(ctx, cameraX, cameraY) {
-        for (const ore of this.ores) {
-            if (ore.broken) continue;
+        for (let i = 0; i < this.ores.length; i++) {
+            const ore = this.ores[i];
             
-            // Convert world coordinates to screen coordinates
-            const screenX = ore.x - Math.floor(cameraX);
-            const screenY = ore.y - Math.floor(cameraY);
+            // Calculate screen position
+            const screenX = ore.x - cameraX;
+            const screenY = ore.y - cameraY;
             
-            // Only draw if ore is visible on screen
-            if (screenX < -ore.radius * 2 || screenX > ctx.canvas.width + ore.radius * 2 || 
-                screenY < -ore.radius * 2 || screenY > ctx.canvas.height + ore.radius * 2) {
+            // Skip if the ore is off-screen
+            const viewportMargin = 100; // Extra margin to draw ores just outside viewport
+            const screenWidth = ctx.canvas.width + viewportMargin * 2;
+            const screenHeight = ctx.canvas.height + viewportMargin * 2;
+            
+            if (
+                screenX < -viewportMargin ||
+                screenY < -viewportMargin ||
+                screenX > screenWidth ||
+                screenY > screenHeight
+            ) {
                 continue;
             }
             
-            // Draw ore
+            // Draw the ore
             if (ore.draw) {
                 ore.draw(ctx, screenX, screenY);
             } else {
-                // Default drawing if ore doesn't have its own draw method
-                this.drawDefaultOre(ctx, screenX, screenY, ore);
-            }
-            
-            // Draw hit effect
-            if (window.hitRocks && window.hitRocks.has(ore)) {
-                this.drawHitEffect(ctx, screenX, screenY, ore);
+                this.drawDefaultOre(ctx, ore, screenX, screenY);
             }
         }
     }
     
     /**
-     * Draw a default ore
+     * Draw a default ore representation
      * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {Object} ore - The ore to draw
      * @param {number} screenX - Screen X position
      * @param {number} screenY - Screen Y position
-     * @param {Object} ore - The ore object
      */
-    drawDefaultOre(ctx, screenX, screenY, ore) {
-        // Draw base shape
-        ctx.fillStyle = ore.color || '#888';
-        ctx.beginPath();
-        ctx.arc(screenX, screenY, ore.radius || 20, 0, Math.PI * 2);
-        ctx.fill();
+    drawDefaultOre(ctx, ore, screenX, screenY) {
+        const radius = ore.radius || 20;
         
-        // Draw border
-        ctx.strokeStyle = '#000';
+        // Determine if the ore is being hit
+        const isHit = window.hitRocks && window.hitRocks.has(ore);
+        
+        // Draw basic ore shape
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+        
+        if (isHit) {
+            // Use hit color
+            ctx.fillStyle = '#ff6666';
+        } else {
+            // Use ore's color
+            ctx.fillStyle = ore.color || '#888';
+        }
+        
+        ctx.fill();
+        ctx.strokeStyle = ore.borderColor || '#666';
         ctx.lineWidth = 2;
         ctx.stroke();
-        
-        // Draw health bar if ore is damaged
-        if (ore.health < ore.maxHealth) {
-            const healthPercent = ore.health / ore.maxHealth;
-            const barWidth = ore.radius * 2;
-            const barHeight = 6;
-            
-            // Background
-            ctx.fillStyle = '#333';
-            ctx.fillRect(
-                screenX - barWidth / 2,
-                screenY - ore.radius - 15,
-                barWidth,
-                barHeight
-            );
-            
-            // Health
-            ctx.fillStyle = healthPercent > 0.5 ? '#0f0' : (healthPercent > 0.25 ? '#ff0' : '#f00');
-            ctx.fillRect(
-                screenX - barWidth / 2,
-                screenY - ore.radius - 15,
-                barWidth * healthPercent,
-                barHeight
-            );
-        }
-    }
-    
-    /**
-     * Draw hit effect for an ore
-     * @param {CanvasRenderingContext2D} ctx - Canvas context
-     * @param {number} screenX - Screen X position
-     * @param {number} screenY - Screen Y position
-     * @param {Object} ore - The ore object
-     */
-    drawHitEffect(ctx, screenX, screenY, ore) {
-        // Draw glow effect
-        ctx.beginPath();
-        const gradient = ctx.createRadialGradient(
-            screenX, screenY, ore.radius * 0.5,
-            screenX, screenY, ore.radius * 1.5
-        );
-        
-        gradient.addColorStop(0, 'rgba(255, 255, 0, 0.3)');
-        gradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
-        
-        ctx.fillStyle = gradient;
-        ctx.arc(screenX, screenY, ore.radius * 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Draw cracks
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.lineWidth = 2;
-        
-        const crackCount = 3 + Math.floor(3 * (1 - ore.health / ore.maxHealth));
-        
-        for (let i = 0; i < crackCount; i++) {
-            const angle = (Math.PI * 2 * i / crackCount) + 
-                          (0.2 * Math.sin(Date.now() / 100 + i));
-            
-            ctx.beginPath();
-            ctx.moveTo(
-                screenX + Math.cos(angle) * ore.radius * 0.3,
-                screenY + Math.sin(angle) * ore.radius * 0.3
-            );
-            ctx.lineTo(
-                screenX + Math.cos(angle) * ore.radius * 0.9,
-                screenY + Math.sin(angle) * ore.radius * 0.9
-            );
-            ctx.stroke();
-        }
-    }
-    
-    /**
-     * Clean up broken ores
-     */
-    cleanupBrokenOres() {
-        this.ores = this.ores.filter(ore => !ore.broken);
-        
-        // Update global reference
-        window.ores = this.ores;
-    }
-    
-    /**
-     * Clear all ores
-     */
-    clearAllOres() {
-        this.ores = [];
-        window.ores = this.ores;
     }
 }
 
 // Make the OreManager class globally available
-window.OreManager = OreManager; 
+window.OreManager = OreManager;
+
+// Add default export
+export default OreManager;

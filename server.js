@@ -1,9 +1,15 @@
-const express = require('express');
-const http = require('http');
-const socketIO = require('socket.io');
-const fs = require('fs');
-const path = require('path');
-const bcrypt = require('bcrypt');
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import bcrypt from 'bcrypt';
+import { fileURLToPath } from 'url';
+
+// Get current directory (equivalent to __dirname in CommonJS)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const saltRounds = 10;
 
 // Rate limiting for player updates
@@ -19,14 +25,14 @@ let config = {
 };
 
 try {
-  if (fs.existsSync('config.json')) {
-    const configData = fs.readFileSync('config.json', 'utf8');
+  if (existsSync('config.json')) {
+    const configData = readFileSync('config.json', 'utf8');
     config = JSON.parse(configData);
     console.log('Loaded configuration from config.json');
   } else {
     console.log('No config.json found, using default configuration');
     // Create default config file
-    fs.writeFileSync('config.json', JSON.stringify(config, null, 2), 'utf8');
+    writeFileSync('config.json', JSON.stringify(config, null, 2), 'utf8');
     console.log('Created default config.json');
   }
 } catch (err) {
@@ -35,10 +41,10 @@ try {
 
 // Create express app and http server
 const app = express();
-const server = http.createServer(app);
+const server = createServer(app);
 
 // Configure Socket.io with CORS settings
-const io = socketIO(server, {
+const io = new Server(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"],
@@ -62,6 +68,29 @@ app.post('/admin/login', (req, res) => {
 // Serve static files from the 'public' directory
 app.use(express.static('public'));
 
+// Serve src directory for ES modules
+app.use('/src', express.static('src', {
+    setHeaders: (res, path) => {
+        // Set proper MIME type for JavaScript modules
+        if (path.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript');
+        }
+    }
+}));
+
+// Add middleware to handle directory requests and serve index.js files
+app.get('/src/*/', (req, res, next) => {
+    const path = req.path;
+    const indexPath = join(__dirname, path, 'index.js');
+    
+    if (existsSync(indexPath)) {
+        res.setHeader('Content-Type', 'application/javascript');
+        res.sendFile(indexPath);
+    } else {
+        next();
+    }
+});
+
 // Add CORS headers middleware for Express
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -75,14 +104,14 @@ app.use(express.json());
 // Load accounts data
 let accounts = {};
 try {
-  if (fs.existsSync('accounts.json')) {
-    const accountsData = fs.readFileSync('accounts.json', 'utf8');
+  if (existsSync('accounts.json')) {
+    const accountsData = readFileSync('accounts.json', 'utf8');
     accounts = JSON.parse(accountsData);
     console.log('Loaded accounts data from accounts.json');
   } else {
     console.log('No accounts.json found, using empty accounts data');
     // Create default accounts file
-    fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+    writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
     console.log('Created default accounts.json');
   }
 } catch (err) {
@@ -159,7 +188,7 @@ app.post('/admin/config', express.json(), (req, res) => {
     config = req.body;
     
     // Save the configuration to file
-    fs.writeFileSync('config.json', JSON.stringify(config, null, 2), 'utf8');
+    writeFileSync('config.json', JSON.stringify(config, null, 2), 'utf8');
     
     console.log('Configuration updated through admin panel');
     res.json({ success: true, message: 'Configuration updated successfully' });
@@ -175,16 +204,16 @@ let players = {};
 let activePlayers = new Set();
 
 // Ensure accounts directory exists
-const accountsDir = path.join(__dirname, 'accounts');
-if (!fs.existsSync(accountsDir)) {
-  fs.mkdirSync(accountsDir, { recursive: true });
+const accountsDir = join(__dirname, 'accounts');
+if (!existsSync(accountsDir)) {
+  mkdirSync(accountsDir, { recursive: true });
   console.log('Created accounts directory');
 }
 
 // Load players data from JSON file if it exists
 try {
-  if (fs.existsSync('playername.json')) {
-    const data = fs.readFileSync('playername.json', 'utf8');
+  if (existsSync('playername.json')) {
+    const data = readFileSync('playername.json', 'utf8');
     players = JSON.parse(data);
     console.log('Loaded player data from playername.json');
   }
@@ -195,7 +224,7 @@ try {
 // Save players data to JSON file
 function savePlayersData() {
   try {
-    fs.writeFileSync('playername.json', JSON.stringify(players), 'utf8');
+    writeFileSync('playername.json', JSON.stringify(players), 'utf8');
     console.log('Player data saved to playername.json');
   } catch (err) {
     console.error('Error saving player data:', err);
@@ -206,8 +235,8 @@ function savePlayersData() {
 function savePlayerToAccount(username) {
   try {
     if (players[username]) {
-      const playerFilePath = path.join(accountsDir, `${username}.json`);
-      fs.writeFileSync(playerFilePath, JSON.stringify(players[username]), 'utf8');
+      const playerFilePath = join(accountsDir, `${username}.json`);
+      writeFileSync(playerFilePath, JSON.stringify(players[username]), 'utf8');
       console.log(`Saved player data for ${username} to ${playerFilePath}`);
     }
   } catch (err) {
@@ -218,9 +247,9 @@ function savePlayerToAccount(username) {
 // Load player data from accounts directory
 function loadPlayerFromAccount(username) {
   try {
-    const playerFilePath = path.join(accountsDir, `${username}.json`);
-    if (fs.existsSync(playerFilePath)) {
-      const data = fs.readFileSync(playerFilePath, 'utf8');
+    const playerFilePath = join(accountsDir, `${username}.json`);
+    if (existsSync(playerFilePath)) {
+      const data = readFileSync(playerFilePath, 'utf8');
       return JSON.parse(data);
     }
   } catch (err) {
@@ -277,7 +306,7 @@ io.on('connection', (socket) => {
       if (isAuthenticated) {
         // Update last login
         accounts[username].lastLogin = Date.now();
-        fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+        writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
         
         // Get player title
         playerTitle = accounts[username].title || 'Newcomer';
@@ -539,7 +568,7 @@ io.on('connection', (socket) => {
       if (data.title !== undefined && accounts[socket.username]) {
         accounts[socket.username].title = data.title;
         try {
-          fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+          writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
           console.log(`Updated title for ${socket.username}: ${data.title}`);
         } catch (err) {
           console.error(`Error updating title in accounts: ${err}`);
@@ -638,7 +667,7 @@ app.post('/register', async (req, res) => {
     };
     
     // Save accounts data
-    fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+    writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
     
     return res.json({ success: true, message: 'Account created successfully' });
   } catch (error) {
@@ -667,7 +696,7 @@ app.post('/login', async (req, res) => {
     if (match) {
       // Update last login
       accounts[username].lastLogin = Date.now();
-      fs.writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
+      writeFileSync('accounts.json', JSON.stringify(accounts, null, 2), 'utf8');
       
       // Generate auth token (in a real app, use a more secure method)
       const token = username + '_' + Date.now();
@@ -686,8 +715,13 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// Serve the main HTML file
+app.get('/', (req, res) => {
+    res.sendFile(join(__dirname, 'public', 'index.html'));
+});
+
 // Start the server
-const PORT = 800;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Open your browser and go to http://localhost:${PORT} or http://127.0.0.1:${PORT}`);

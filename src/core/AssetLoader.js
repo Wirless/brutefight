@@ -580,3 +580,5 @@ class AssetLoader {
 
 // Make the AssetLoader class globally available
 window.AssetLoader = AssetLoader; 
+
+export default AssetLoader;

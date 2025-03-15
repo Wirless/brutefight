@@ -919,3 +919,5 @@ window.ExampleItems = {
         rarity: 'common'
     })
 }; 
+
+export default Item;

@@ -476,3 +476,5 @@ class ExperienceOrbManager {
 // Make classes globally available
 window.ExperienceOrb = ExperienceOrb;
 window.ExperienceOrbManager = ExperienceOrbManager; 
+
+export default ExperienceOrb;

@@ -326,8 +326,8 @@ class PlayerManager {
     syncWithServer() {
         if (!this.player || !this.game.socket) return;
         
-        // Send current player data to server
-        this.game.socket.emit('updatePlayerData', {
+        // Send current player data to server using the Socket module
+        this.game.socket.sendPlayerUpdate({
             x: this.player.x,
             y: this.player.y,
             experience: this.player.experience,
@@ -342,5 +342,8 @@ class PlayerManager {
     }
 }
 
-// Make the PlayerManager class globally available
-window.PlayerManager = PlayerManager; 
+// Make the PlayerManager class globally available for backward compatibility
+window.PlayerManager = PlayerManager;
+
+// Add default export
+export default PlayerManager;

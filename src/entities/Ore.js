@@ -649,11 +649,24 @@ window.IronOre = IronOre;
 window.GoldOre = GoldOre;
 window.DiamondOre = DiamondOre;
 
-// Create a namespace for all ore types
+// Create a namespace for all ore types - modify to work with OreManager
 window.Ores = {
-    stone: StoneOre,
-    copper: CopperOre,
-    iron: IronOre,
-    gold: GoldOre,
-    diamond: DiamondOre
+    // OreManager expects functions that take (x,y) parameters
+    stone: (x, y) => new StoneOre(x, y),
+    copper: (x, y) => new CopperOre(x, y),
+    iron: (x, y) => new IronOre(x, y), 
+    gold: (x, y) => new GoldOre(x, y),
+    diamond: (x, y) => new DiamondOre(x, y)
 }; 
+
+// Export the ore classes individually for ES modules
+export { 
+    Ore,
+    StoneOre,
+    CopperOre,
+    IronOre,
+    GoldOre,
+    DiamondOre
+};
+
+export default Ore;
