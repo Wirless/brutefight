@@ -901,26 +901,32 @@ class AxeAttack extends Attack {
         ctx.moveTo(screenX, screenY);
         ctx.lineTo(handleEndX, handleEndY);
         ctx.strokeStyle = '#8B4513'; // Brown
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;
         ctx.stroke();
         
-        // Draw axe head
-        // Calculate perpendicular angle for the axe blade
-        const perpAngle = currentSwingAngle + Math.PI / 2;
+        // Draw a simple axe head at end of handle
+        // Calculate perpendicular angle for the blade
+        const bladeAngle = currentSwingAngle + Math.PI / 2;
+        
+        // Calculate the blade curve points
         const bladeLength = 15;
+        const bladeWidth = 8;
         
-        // Axe blade points
-        const bladeTopX = handleEndX + Math.cos(perpAngle) * bladeLength;
-        const bladeTopY = handleEndY + Math.sin(perpAngle) * bladeLength;
-        const bladeBottomX = handleEndX - Math.cos(perpAngle) * bladeLength;
-        const bladeBottomY = handleEndY - Math.sin(perpAngle) * bladeLength;
+        // Blade points
+        const bladeTopX = handleEndX + Math.cos(bladeAngle) * bladeLength;
+        const bladeTopY = handleEndY + Math.sin(bladeAngle) * bladeLength;
         
-        // Draw axe blade
+        // Draw the axe blade (curved line)
         ctx.beginPath();
-        ctx.moveTo(bladeTopX, bladeTopY);
-        ctx.lineTo(bladeBottomX, bladeBottomY);
+        ctx.moveTo(handleEndX, handleEndY);
+        ctx.quadraticCurveTo(
+            handleEndX + Math.cos(bladeAngle) * (bladeLength/2) - Math.cos(currentSwingAngle) * bladeWidth,
+            handleEndY + Math.sin(bladeAngle) * (bladeLength/2) - Math.sin(currentSwingAngle) * bladeWidth,
+            bladeTopX,
+            bladeTopY
+        );
         ctx.strokeStyle = '#A9A9A9'; // Gray
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 5;
         ctx.stroke();
         
         // Draw swing trail
@@ -932,6 +938,23 @@ class AxeAttack extends Attack {
             // Draw arc from start position to current position
             ctx.arc(screenX, screenY, handleLength * 0.8, swingStartAngle, currentSwingAngle);
             ctx.stroke();
+        }
+        
+        // Draw impact effect
+        if (this.hasHit && progress > 0.4 && progress < 0.7) {
+            const impactProgress = (progress - 0.4) / 0.3; // 0 to 1 during impact
+            const impactOpacity = 0.7 * (1 - impactProgress);
+            const impactSize = 20 * (1 - impactProgress * 0.5);
+            
+            // Impact position is at the blade edge
+            const impactX = bladeTopX;
+            const impactY = bladeTopY;
+            
+            // Draw impact flash
+            ctx.beginPath();
+            ctx.arc(impactX, impactY, impactSize, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${impactOpacity})`;
+            ctx.fill();
         }
     }
     
