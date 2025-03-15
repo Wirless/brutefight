@@ -1360,7 +1360,7 @@ class Game {
     }
 
     /**
-     * Update hit rocks effect
+     * Update hit rocks visual effect
      * @param {number} deltaTime - Time elapsed since last update
      */
     updateHitRocksEffect(deltaTime) {
@@ -1392,92 +1392,141 @@ class Game {
     }
 
     /**
-     * Render hit rocks effects
+     * Draw hit effect for rocks/ores
+     * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {Object} rock - Rock object
+     * @param {number} screenX - Screen X position
+     * @param {number} screenY - Screen Y position
+     * @param {number} progress - Effect progress (0-1)
      */
-    renderHitRocks() {
-        // Make sure hitRocks is initialized
-        if (!window.hitRocks || !window.rockHitTimes) return;
+    drawRockHitEffect(ctx, rock, screenX, screenY, progress) {
+        // Outer glow
+        const radius = rock.radius || 20;
+        const glowRadius = radius * (1.2 + progress * 0.3);
+        const gradient = ctx.createRadialGradient(
+            screenX, screenY, radius,
+            screenX, screenY, glowRadius
+        );
         
-        // Get context for rendering
-        const ctx = this.ctx;
+        // White flash that fades to rock color
+        gradient.addColorStop(0, `rgba(255, 255, 255, ${0.7 * (1 - progress)})`);
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
         
-        // Check each hit rock
-        for (const rock of window.hitRocks) {
-            // Skip if invalid
-            if (!rock || !window.rockHitTimes.has(rock)) continue;
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Create cracks/fracture lines
+        if (progress < 0.5) {
+            const crackCount = 4;
+            const maxLength = radius * 1.5;
+            const fadeAlpha = 0.8 * (1 - progress * 2); // Fade out cracks
             
-            // Calculate hit effect progress (0 to 1)
-            const hitTime = window.rockHitTimes.get(rock);
-            const progress = Math.min(1, (Date.now() - hitTime) / window.rockHitDuration);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${fadeAlpha})`;
+            ctx.lineWidth = 2;
             
-            // Convert to screen coordinates
-            const screenX = rock.x - Math.floor(this.cameraX);
-            const screenY = rock.y - Math.floor(this.cameraY);
-            
-            // Skip if offscreen
-            if (screenX < -50 || screenX > this.canvas.width + 50 || 
-                screenY < -50 || screenY > this.canvas.height + 50) {
-                continue;
-            }
-            
-            // Draw hit effect
-            ctx.save();
-            
-            // Outer glow
-            const glowRadius = rock.radius * (1.2 + progress * 0.3);
-            const gradient = ctx.createRadialGradient(
-                screenX, screenY, rock.radius,
-                screenX, screenY, glowRadius
-            );
-            
-            // White flash that fades to rock color
-            gradient.addColorStop(0, `rgba(255, 255, 255, ${0.7 * (1 - progress)})`);
-            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-            
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(screenX, screenY, glowRadius, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Create cracks/fracture lines
-            if (progress < 0.5) {
-                const crackCount = 4;
-                const maxLength = rock.radius * 1.5;
-                const fadeAlpha = 0.8 * (1 - progress * 2); // Fade out cracks
+            for (let i = 0; i < crackCount; i++) {
+                const angle = (Math.PI * 2 * i / crackCount) + 
+                            (rock.id % 100) / 100 * Math.PI; // Randomize based on rock ID
                 
-                ctx.strokeStyle = `rgba(255, 255, 255, ${fadeAlpha})`;
-                ctx.lineWidth = 2;
+                const length = maxLength * (0.7 + 0.3 * Math.sin(rock.id + i));
                 
-                for (let i = 0; i < crackCount; i++) {
-                    const angle = (Math.PI * 2 * i / crackCount) + 
-                                  (rock.id % 100) / 100 * Math.PI; // Randomize based on rock ID
-                    
-                    const length = maxLength * (0.7 + 0.3 * Math.sin(rock.id + i));
-                    
-                    ctx.beginPath();
-                    ctx.moveTo(screenX, screenY);
-                    ctx.lineTo(
-                        screenX + Math.cos(angle) * length,
-                        screenY + Math.sin(angle) * length
-                    );
-                    ctx.stroke();
-                }
+                ctx.beginPath();
+                ctx.moveTo(screenX, screenY);
+                ctx.lineTo(
+                    screenX + Math.cos(angle) * length,
+                    screenY + Math.sin(angle) * length
+                );
+                ctx.stroke();
             }
-            
-            // Draw health bar for rock
-            this.drawRockHealthBar(ctx, rock, screenX, screenY);
-            
-            ctx.restore();
         }
     }
 
     /**
-     * Draw health bar for a rock
+     * Draw hit effect for trees
      * @param {CanvasRenderingContext2D} ctx - Canvas context
-     * @param {Object} rock - Rock object
-     * @param {number} x - Screen X position
-     * @param {number} y - Screen Y position
+     * @param {Object} tree - Tree object
+     * @param {number} screenX - Screen X position
+     * @param {number} screenY - Screen Y position
+     * @param {number} progress - Effect progress (0-1)
      */
+    drawTreeHitEffect(ctx, tree, screenX, screenY, progress) {
+        // Get tree dimensions - try to read from the object, or use defaults
+        const trunkWidth = tree.trunkWidth || 20;
+        const trunkHeight = tree.trunkHeight || 60;
+        const leavesRadius = tree.leavesRadius || 40;
+        
+        // Determine hit point (approximately middle of the trunk)
+        const hitX = screenX;
+        const hitY = screenY + (trunkHeight / 4);
+        
+        // Draw hit flash
+        const intensity = 1 - progress;
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.5 * intensity})`;
+        
+        // Flash ellipse around trunk
+        ctx.beginPath();
+        ctx.ellipse(
+            hitX, 
+            hitY,
+            trunkWidth * (1 + intensity * 0.5),
+            trunkHeight * 0.4 * (1 + intensity * 0.5),
+            0, 0, Math.PI * 2
+        );
+        ctx.fill();
+        
+        // Add wood chip particles
+        if (progress < 0.3) {
+            const chipCount = 3;
+            const chipSize = 3;
+            const maxDistance = trunkWidth * (progress * 3 + 1);
+            
+            ctx.fillStyle = tree.trunkColor || '#8B4513';
+            
+            for (let i = 0; i < chipCount; i++) {
+                const angle = Math.PI * 0.75 + (Math.PI * 0.5 * i / chipCount) - (Math.PI * 0.25);
+                const distance = maxDistance * (0.5 + Math.random() * 0.5);
+                
+                ctx.beginPath();
+                ctx.arc(
+                    hitX + Math.cos(angle) * distance,
+                    hitY + Math.sin(angle) * distance,
+                    chipSize * (1 - progress),
+                    0, Math.PI * 2
+                );
+                ctx.fill();
+            }
+        }
+        
+        // Draw cracks in trunk
+        if (progress < 0.7) {
+            const fadeAlpha = 0.7 * (1 - progress / 0.7);
+            ctx.strokeStyle = `rgba(0, 0, 0, ${fadeAlpha})`;
+            ctx.lineWidth = 2;
+            
+            // One main crack
+            ctx.beginPath();
+            ctx.moveTo(hitX, hitY);
+            ctx.lineTo(
+                hitX + (tree.id % 2 ? 1 : -1) * trunkWidth * 0.4,
+                hitY + trunkHeight * 0.3
+            );
+            ctx.stroke();
+            
+            // Optional secondary cracks
+            if (tree.health && tree.maxHealth && tree.health < tree.maxHealth * 0.7) {
+                ctx.beginPath();
+                ctx.moveTo(hitX, hitY);
+                ctx.lineTo(
+                    hitX + (tree.id % 2 ? -1 : 1) * trunkWidth * 0.3,
+                    hitY + trunkHeight * 0.2
+                );
+                ctx.stroke();
+            }
+        }
+    }
+
     drawRockHealthBar(ctx, rock, x, y) {
         // Only draw if rock has health
         if (!rock.health || !rock.maxHealth) return;
@@ -1532,64 +1581,6 @@ class Game {
     }
 
     /**
-     * Update rock particles
-     */
-    updateRockParticles() {
-        // Make sure rockParticles is initialized
-        if (!window.rockParticles) {
-            window.rockParticles = [];
-            return;
-        }
-
-        // Update only if we have particles
-        if (window.rockParticles.length > 0) {
-            const now = Date.now();
-            
-            // Update each particle and remove expired ones
-            for (let i = window.rockParticles.length - 1; i >= 0; i--) {
-                const particle = window.rockParticles[i];
-                
-                // Skip if invalid
-                if (!particle) {
-                    window.rockParticles.splice(i, 1);
-                    continue;
-                }
-                
-                // Check if particle has expired
-                if (particle.created && particle.lifetime) {
-                    if (now - particle.created > particle.lifetime) {
-                        window.rockParticles.splice(i, 1);
-                        continue;
-                    }
-                    
-                    // Fade out particles as they get older
-                    const age = now - particle.created;
-                    const lifeProgress = age / particle.lifetime;
-                    
-                    // Only fade in last 30% of lifetime
-                    if (lifeProgress > 0.7) {
-                        particle.opacity = 0.8 * (1 - ((lifeProgress - 0.7) / 0.3));
-                    }
-                }
-                
-                // Update particle velocity
-                if (particle.vx !== undefined && particle.vy !== undefined) {
-                    // Update position based on velocity
-                    particle.x += particle.vx;
-                    particle.y += particle.vy;
-                    
-                    // Apply gravity
-                    particle.vy += 0.05;
-                    
-                    // Apply drag/friction
-                    particle.vx *= 0.98;
-                    particle.vy *= 0.98;
-                }
-            }
-        }
-    }
-
-    /**
      * Render all game elements
      */
     render() {
@@ -1614,6 +1605,9 @@ class Game {
         
         // Render particles
         this.renderParticles();
+        
+        // Render floating text particles (like damage numbers)
+        this.renderTextParticles();
         
         // Draw experience orbs
         if (window.expOrbManager && window.expOrbManager.draw) {
@@ -1981,6 +1975,229 @@ class Game {
             '#006400', // DarkGreen
             '#556B2F'  // DarkOliveGreen
         ];
+    }
+
+    /**
+     * Render floating text particles like damage numbers
+     */
+    renderTextParticles() {
+        if (!this.textParticles) this.textParticles = [];
+        
+        const ctx = this.ctx;
+        const now = Date.now();
+        
+        // Render and update each text particle
+        for (let i = this.textParticles.length - 1; i >= 0; i--) {
+            const particle = this.textParticles[i];
+            
+            // Skip invalid particles
+            if (!particle) {
+                this.textParticles.splice(i, 1);
+                continue;
+            }
+            
+            // Check if particle has expired
+            if (now - particle.created > particle.lifetime) {
+                this.textParticles.splice(i, 1);
+                continue;
+            }
+            
+            // Calculate opacity based on lifetime
+            const age = now - particle.created;
+            const lifeProgress = age / particle.lifetime;
+            const opacity = particle.opacity * (1 - lifeProgress);
+            
+            // Calculate screen position
+            const screenX = particle.x - Math.floor(this.cameraX);
+            const screenY = particle.y - Math.floor(this.cameraY);
+            
+            // Skip if offscreen
+            if (screenX < -50 || screenX > this.canvas.width + 50 || 
+                screenY < -50 || screenY > this.canvas.height + 50) {
+                continue;
+            }
+            
+            // Update position
+            particle.x += particle.vx || 0;
+            particle.y += particle.vy || 0;
+            
+            // Draw text
+            ctx.save();
+            ctx.font = `bold ${particle.size || 14}px Arial`;
+            ctx.fillStyle = `rgba(${particle.color === 'red' ? '255, 0, 0' : '255, 255, 255'}, ${opacity})`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Add shadow to make text more visible
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 1;
+            ctx.shadowOffsetY = 1;
+            
+            ctx.fillText(particle.text, screenX, screenY);
+            ctx.restore();
+        }
+    }
+
+    renderHitRocks() {
+        // Make sure hitRocks is initialized
+        if (!window.hitRocks || !window.rockHitTimes) return;
+        
+        // Get context for rendering
+        const ctx = this.ctx;
+        const now = Date.now();
+        
+        // Check each hit object (rock or tree)
+        for (const object of window.hitRocks) {
+            // Skip if invalid
+            if (!object || !window.rockHitTimes.has(object)) continue;
+            
+            // Calculate hit effect progress (0 to 1)
+            const hitTime = window.rockHitTimes.get(object);
+            const progress = Math.min(1, (now - hitTime) / window.rockHitDuration);
+            
+            // Convert to screen coordinates
+            const screenX = object.x - Math.floor(this.cameraX);
+            const screenY = object.y - Math.floor(this.cameraY);
+            
+            // Skip if offscreen
+            if (screenX < -50 || screenX > this.canvas.width + 50 || 
+                screenY < -50 || screenY > this.canvas.height + 50) {
+                continue;
+            }
+            
+            // Save context for this object's effects
+            ctx.save();
+            
+            // Determine if this is a tree or rock based on properties
+            const isTree = object.trunkHeight !== undefined || object.leavesColor !== undefined;
+            
+            if (isTree) {
+                // Draw tree hit effect
+                this.drawTreeHitEffect(ctx, object, screenX, screenY, progress);
+            } else {
+                // Draw regular rock/ore hit effect
+                this.drawRockHitEffect(ctx, object, screenX, screenY, progress);
+            }
+            
+            // Draw health bar if object has health
+            if (object.health !== undefined && object.maxHealth !== undefined) {
+                this.drawRockHealthBar(ctx, object, screenX, screenY);
+            }
+            
+            ctx.restore();
+        }
+    }
+
+    drawRockHealthBar(ctx, rock, x, y) {
+        // Only draw if rock has health
+        if (!rock.health || !rock.maxHealth) return;
+        
+        // If rock is at full health, don't show the bar
+        if (rock.health >= rock.maxHealth && !window.hitRocks.has(rock)) return;
+        
+        // Health bar dimensions
+        const barWidth = rock.radius * 2;
+        const barHeight = 6;
+        const barY = y - rock.radius - 15;
+        
+        // Background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(x - barWidth/2, barY, barWidth, barHeight);
+        
+        // Border
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - barWidth/2, barY, barWidth, barHeight);
+        
+        // Calculate health percentage
+        const healthPercent = rock.health / rock.maxHealth;
+        
+        // Choose color based on health percentage
+        let barColor;
+        if (healthPercent > 0.6) {
+            barColor = 'rgba(0, 255, 0, 0.8)'; // Green
+        } else if (healthPercent > 0.3) {
+            barColor = 'rgba(255, 255, 0, 0.8)'; // Yellow
+        } else {
+            barColor = 'rgba(255, 0, 0, 0.8)'; // Red
+        }
+        
+        // Fill health bar
+        ctx.fillStyle = barColor;
+        ctx.fillRect(
+            x - barWidth/2, 
+            barY, 
+            barWidth * healthPercent, 
+            barHeight
+        );
+        
+        // Highlight on top of health bar
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.fillRect(
+            x - barWidth/2, 
+            barY, 
+            barWidth * healthPercent, 
+            barHeight/2
+        );
+    }
+
+    /**
+     * Update rock particles
+     */
+    updateRockParticles() {
+        // Make sure rockParticles is initialized
+        if (!window.rockParticles) {
+            window.rockParticles = [];
+            return;
+        }
+
+        // Update only if we have particles
+        if (window.rockParticles.length > 0) {
+            const now = Date.now();
+            
+            // Update each particle and remove expired ones
+            for (let i = window.rockParticles.length - 1; i >= 0; i--) {
+                const particle = window.rockParticles[i];
+                
+                // Skip if invalid
+                if (!particle) {
+                    window.rockParticles.splice(i, 1);
+                    continue;
+                }
+                
+                // Check if particle has expired
+                if (particle.created && particle.lifetime) {
+                    if (now - particle.created > particle.lifetime) {
+                        window.rockParticles.splice(i, 1);
+                        continue;
+                    }
+                    
+                    // Fade out particles as they get older
+                    const age = now - particle.created;
+                    const lifeProgress = age / particle.lifetime;
+                    
+                    // Only fade in last 30% of lifetime
+                    if (lifeProgress > 0.7) {
+                        particle.opacity = 0.8 * (1 - ((lifeProgress - 0.7) / 0.3));
+                    }
+                }
+                
+                // Update particle velocity
+                if (particle.vx !== undefined && particle.vy !== undefined) {
+                    // Update position based on velocity
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    
+                    // Apply gravity
+                    particle.vy += 0.05;
+                    
+                    // Apply drag/friction
+                    particle.vx *= 0.98;
+                    particle.vy *= 0.98;
+                }
+            }
+        }
     }
 }
 

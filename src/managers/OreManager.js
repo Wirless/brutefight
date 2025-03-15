@@ -399,6 +399,95 @@ class OreManager {
         ctx.lineWidth = 2;
         ctx.stroke();
     }
+    
+    /**
+     * Update all ores
+     * @param {number} deltaTime - Time elapsed since last update
+     */
+    update(deltaTime) {
+        // Update each ore
+        for (let i = 0; i < this.ores.length; i++) {
+            const ore = this.ores[i];
+            
+            // Skip invalid ores
+            if (!ore) {
+                this.ores.splice(i, 1);
+                i--;
+                continue;
+            }
+            
+            // Call the ore's update method if it exists
+            if (ore.update) {
+                ore.update(deltaTime);
+            }
+            
+            // Regenerate health if needed
+            if (ore.regenerateHealth) {
+                ore.regenerateHealth(deltaTime);
+            }
+        }
+    }
+    
+    /**
+     * Check if an ore can be hit at a specific position
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     * @param {number} range - Hit range
+     * @param {number} damage - Amount of damage to deal
+     * @param {Object} source - Source of the damage
+     * @returns {Object|null} - The hit ore or null if none hit
+     */
+    hitOreAt(x, y, range, damage, source) {
+        // Find ore closest to the hit position within range
+        let closestOre = null;
+        let closestDistance = range;
+        
+        for (let i = 0; i < this.ores.length; i++) {
+            const ore = this.ores[i];
+            
+            // Skip if ore has no health (already broken)
+            if (ore.health === 0) continue;
+            
+            // Calculate distance
+            const dx = ore.x - x;
+            const dy = ore.y - y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Check if within range and closer than previous matches
+            if (distance < closestDistance) {
+                closestOre = ore;
+                closestDistance = distance;
+            }
+        }
+        
+        // If we found an ore, hit it
+        if (closestOre) {
+            console.log(`Hitting ore at (${closestOre.x}, ${closestOre.y}) with ${damage} damage`);
+            
+            // Register ore as hit for visual effects
+            if (!window.hitRocks) window.hitRocks = new Set();
+            if (!window.rockHitTimes) window.rockHitTimes = new Map();
+            
+            window.hitRocks.add(closestOre);
+            window.rockHitTimes.set(closestOre, Date.now());
+            
+            // Check if ore has hit method
+            if (typeof closestOre.hit === 'function') {
+                const destroyed = closestOre.hit(damage, source);
+                return closestOre;
+            } 
+            // Simple fallback if ore doesn't have hit method
+            else if (closestOre.health !== undefined) {
+                closestOre.health -= damage;
+                if (closestOre.health <= 0) {
+                    closestOre.health = 0;
+                }
+                return closestOre;
+            }
+        }
+        
+        return null;
+    }
 }
 
 // Make the OreManager class globally available

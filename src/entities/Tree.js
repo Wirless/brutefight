@@ -312,6 +312,12 @@ class Tree {
         
         console.log(`Tree hit! Type: ${this.type}, Health: ${this.health}/${this.maxHealth}, Damage: ${damage}`);
         
+        // Ensure lastHitTime is set for visual effect
+        this.lastHitTime = Date.now();
+        
+        // Create a "floating damage" text effect
+        this.createDamageNumber(damage);
+        
         // Apply damage to the tree
         const destroyed = this.takeDamage(damage, source);
         
@@ -319,6 +325,38 @@ class Tree {
         this.onHit(damage, source);
         
         return destroyed;
+    }
+    
+    /**
+     * Create a floating damage number
+     * @param {number} damage - Amount of damage dealt
+     */
+    createDamageNumber(damage) {
+        // Only create if we have a global particles system or game reference
+        if (!window.game || (!window.particleManager && !window.rockParticles)) return;
+        
+        // Create a "floating" damage number that rises up
+        const damageText = {
+            x: this.x,
+            y: this.y - this.trunkHeight / 2,
+            text: `-${damage}`,
+            color: 'red',
+            size: 14 + Math.min(damage, 10), // Larger text for more damage
+            opacity: 1,
+            lifetime: 1500,
+            created: Date.now(),
+            vy: -1, // Move upward
+            vx: (Math.random() - 0.5) * 0.5 // Slight random horizontal movement
+        };
+        
+        // Add to global particles if possible
+        if (window.particleManager && window.particleManager.addTextParticle) {
+            window.particleManager.addTextParticle(damageText);
+        } else if (window.game) {
+            // Fall back to custom rendering if game reference exists
+            if (!window.game.textParticles) window.game.textParticles = [];
+            window.game.textParticles.push(damageText);
+        }
     }
     
     /**

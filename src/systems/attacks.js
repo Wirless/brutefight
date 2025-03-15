@@ -529,7 +529,7 @@ class PickaxeAttack extends Attack {
                     // If createOrb is not available, use createOrbBurst but with one value per orb
                     window.expOrbManager.createOrbBurst(ore.x, ore.y, expAmount, expAmount);
                 }
-            }
+            } 
             // Use old implementation if the above isn't available
             else if (window.ExperienceOrbManager) {
                 // Try to use the manager if it's already instantiated
@@ -599,7 +599,7 @@ class AxeAttack extends Attack {
         this.elapsedTime = 0;
         
         // Load hit sound
-        this.hitSound = 'chop';
+        this.hitSound = 'hit2'; // Use hit2 sound which is known to exist
         
         console.log('AxeAttack initialized');
     }
@@ -720,43 +720,63 @@ class AxeAttack extends Attack {
     }
     
     /**
-     * Create wood chip particles when hitting a tree
-     * @param {number} x - X position
-     * @param {number} y - Y position
-     * @param {string} color - Particle color
+     * Create wood particles at the hit location
+     * @param {number} x - X position of the hit
+     * @param {number} y - Y position of the hit
+     * @param {string} color - Color of the wood (trunk color)
      */
     createWoodParticles(x, y, color) {
-        if (window.particleManager) {
-            const particleCount = Math.floor(5 + Math.random() * 5);
-            const baseSpeed = 0.5 + Math.random() * 1.5;
+        if (!window.particleManager) {
+            // Fallback to rockParticles if no particle manager
+            if (!window.rockParticles) {
+                window.rockParticles = [];
+            }
+            
+            const particleCount = 8 + Math.floor(Math.random() * 5);
             
             for (let i = 0; i < particleCount; i++) {
                 const angle = Math.random() * Math.PI * 2;
-                const speed = baseSpeed * (0.5 + Math.random());
-                const dx = Math.cos(angle) * speed;
-                const dy = Math.sin(angle) * speed;
+                const speed = 1 + Math.random() * 3;
+                const size = 2 + Math.random() * 3;
+                const lifetime = 800 + Math.random() * 1200;
                 
-                // Make wood chips more rectangular
-                const width = 3 + Math.random() * 3;
-                const height = 2 + Math.random() * 2;
-                const rotation = Math.random() * Math.PI * 2;
-                
-                window.particleManager.createParticle({
-                    x: x + (Math.random() - 0.5) * 10,
-                    y: y + (Math.random() - 0.5) * 10,
-                    dx: dx,
-                    dy: dy,
-                    width: width,
-                    height: height,
-                    rotation: rotation,
-                    rotationSpeed: (Math.random() - 0.5) * 0.2,
-                    gravity: 0.05,
-                    life: 20 + Math.random() * 30,
-                    color: color,
-                    alpha: 0.9,
-                    alphaDecay: 0.02
+                window.rockParticles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 1, // Add a slight upward motion
+                    size: size,
+                    color: color || '#8B4513', // Default to saddle brown
+                    opacity: 0.9,
+                    created: Date.now(),
+                    lifetime: lifetime
                 });
             }
+        } else {
+            // Use particle manager if available
+            const particleCount = 10 + Math.floor(Math.random() * 8);
+            const particles = [];
+            
+            for (let i = 0; i < particleCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 1.5 + Math.random() * 4;
+                const size = 2 + Math.random() * 3;
+                const life = 800 + Math.random() * 1200;
+                
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 1.5, // Add upward motion
+                    size: size,
+                    color: color || '#8B4513',
+                    life: life,
+                    maxLife: life,
+                    gravity: 0.1 + Math.random() * 0.1
+                });
+            }
+            
+            window.particleManager.addParticles(particles);
         }
     }
     
@@ -766,28 +786,46 @@ class AxeAttack extends Attack {
      * @param {Object} drops - Drops from the tree
      */
     createWoodExperienceOrbs(tree, drops) {
-        if (!tree || !drops) return;
+        if (!tree || !drops) {
+            console.error("Cannot create experience orbs - tree or drops are missing");
+            return;
+        }
         
         const experience = Math.floor(drops.experience || 0);
         
-        if (experience <= 0) return;
+        if (experience <= 0) {
+            console.warn("Tree has no experience value");
+            return;
+        }
         
-        console.log(`Creating ${experience} individual experience orbs from chopped tree`);
+        console.log(`Creating ${experience} experience from chopped tree`);
         
         // Add experience to the woodcutting skill
         if (this.player && window.game && window.game.skillsManager) {
+            console.log("Adding experience to woodcutting skill");
             window.game.skillsManager.addExperience('woodcutting', experience);
         }
         
+        // Spawn experience orbs
+        this.spawnExperienceOrbs(tree.x, tree.y, experience);
+    }
+    
+    /**
+     * Spawn experience orbs at a location
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     * @param {number} amount - Amount of experience
+     */
+    spawnExperienceOrbs(x, y, amount) {
         // Use the newer experience orb manager if available
         if (window.expOrbManager) {
-            // Create one orb per experience point
-            for (let i = 0; i < experience; i++) {
-                // Create a burst pattern around the tree
+            console.log("Using expOrbManager to create orbs");
+            // Create orbs in a burst pattern around the source
+            for (let i = 0; i < amount; i++) {
                 const angle = Math.random() * Math.PI * 2;
-                const distance = Math.random() * 20;
-                const orbX = tree.x + Math.cos(angle) * distance;
-                const orbY = tree.y + Math.sin(angle) * distance;
+                const distance = Math.random() * 20 + 5;
+                const orbX = x + Math.cos(angle) * distance;
+                const orbY = y + Math.sin(angle) * distance;
                 
                 window.expOrbManager.createOrb({
                     x: orbX,
@@ -799,18 +837,40 @@ class AxeAttack extends Attack {
         } 
         // Fallback to older implementation
         else if (window.ExperienceOrbManager) {
-            for (let i = 0; i < experience; i++) {
+            console.log("Using ExperienceOrbManager to create orbs");
+            for (let i = 0; i < amount; i++) {
                 const angle = Math.random() * Math.PI * 2;
-                const distance = Math.random() * 20;
-                const orbX = tree.x + Math.cos(angle) * distance;
-                const orbY = tree.y + Math.sin(angle) * distance;
+                const distance = Math.random() * 20 + 5;
+                const orbX = x + Math.cos(angle) * distance;
+                const orbY = y + Math.sin(angle) * distance;
                 
                 window.ExperienceOrbManager.createOrb(orbX, orbY, 1);
             }
         }
-        // Fallback when no experience orb manager is found
+        // Manual creation as last resort
+        else if (window.game && window.game.addExperience) {
+            console.log("Direct experience addition as fallback");
+            window.game.addExperience(amount);
+            
+            // Create a visual indicator
+            if (window.game.textParticles) {
+                window.game.textParticles.push({
+                    x: x,
+                    y: y,
+                    text: `+${amount} XP`,
+                    color: 'yellow',
+                    size: 16,
+                    opacity: 1,
+                    lifetime: 2000,
+                    created: Date.now(),
+                    vy: -1.5,
+                    vx: 0
+                });
+            }
+        }
+        // Last fallback
         else {
-            console.warn('No experience orb manager found');
+            console.warn('No experience orb manager found for tree experience orbs');
         }
     }
     
@@ -875,117 +935,239 @@ class AxeAttack extends Attack {
         }
     }
     
-    // Re-add play hit sound
+    /**
+     * Play hit sound when axe hits a tree or rock
+     */
     playHitSound() {
         try {
-            if (window.game && window.game.assetLoader) {
-                window.game.assetLoader.playSound(this.hitSound, 0.4);
-            } else if (window.audioContext) {
-                // Fallback to direct audio playing
-                const soundName = 'sounds/chop.mp3';
-                const sound = window.soundsCache && window.soundsCache[soundName] ? 
-                    window.soundsCache[soundName].cloneNode() : new Audio(soundName);
-                sound.volume = 0.4;
-                sound.playbackRate = 0.9 + Math.random() * 0.2; // Add some pitch variation
-                sound.play().catch(err => console.log('Sound play failed:', err));
+            // Try playing using standard hit sound
+            if (this.hitSound) {
+                // First try using the hit sound if it's loaded as an Audio object
+                if (typeof this.hitSound === 'object' && this.hitSound instanceof Audio) {
+                    const sound = this.hitSound.cloneNode();
+                    sound.volume = 0.4;
+                    sound.playbackRate = 0.9 + Math.random() * 0.2;
+                    sound.play().catch(err => console.log('Sound play failed:', err));
+                    return;
+                }
+                
+                // If it's a string name, try the asset loader
+                if (window.game && window.game.assetLoader) {
+                    window.game.assetLoader.playSound(this.hitSound, 0.4);
+                    return;
+                }
             }
+            
+            // Fallback to direct audio playing
+            let soundFile = 'sounds/hit2.mp3'; // Use hit2.mp3 as fallback (exists from pickaxe sound)
+            
+            // Try to get from sound cache
+            let sound;
+            if (window.soundsCache && window.soundsCache[soundFile]) {
+                sound = window.soundsCache[soundFile].cloneNode();
+            } else {
+                // Create new Audio object
+                sound = new Audio(soundFile);
+                // Cache it for future use
+                if (!window.soundsCache) window.soundsCache = {};
+                window.soundsCache[soundFile] = sound;
+            }
+            
+            // Play the sound
+            sound.volume = 0.4;
+            sound.playbackRate = 0.9 + Math.random() * 0.2; // Add some pitch variation
+            sound.play().catch(err => console.log('Sound play failed:', err));
+            
+            // Also output a console message to help debug
+            console.log("Playing axe hit sound with fallback method");
         } catch (error) {
-            console.error("Error playing hit sound:", error);
+            console.error("Error playing axe hit sound:", error);
         }
     }
 
-    // Add the missing checkHits method
+    // Fix the checkHits method to properly detect tree hits
     checkHits() {
-        // If already hit something or not at the right frame of animation, skip
-        if (this.hasHit || this.elapsedTime < (this.getDuration() * 0.4)) {
+        // If already hit something this attack or not at the right frame of animation, skip
+        if (this.hasHit || this.elapsedTime < (this.getDuration() * 0.3)) {
             return false;
         }
         
         const player = this.player;
-        
-        // Check if there are rocks nearby
         let hitSomething = false;
         
-        // Calculate attack point position
-        const attackRange = player.size * 2.5;
-        const attackX = player.x + Math.cos(this.direction) * attackRange;
-        const attackY = player.y + Math.sin(this.direction) * attackRange;
+        // Use proper axe attack range - 110 radius with length 50
+        const AXE_ATTACK_RADIUS = 110;
+        const AXE_ATTACK_LENGTH = 50;
         
-        // Check for ore hits
-        if (window.oreManager) {
-            const hitOre = window.oreManager.hitOreAt(attackX, attackY, 20, this.damage, player);
-            
-            if (hitOre) {
-                this.hasHit = true;
-                hitSomething = true;
-                
-                // Create particles at hit location
-                this.createDefaultParticles(hitOre.x, hitOre.y, hitOre.color);
-                
-                // Show hit effect
-                if (window.game) window.game.updateHitRocksEffect(hitOre);
-                
-                // Play hit sound
-                this.playHitSound();
-                
-                // Check if ore was destroyed and create experience orbs
-                if (hitOre.health <= 0) {
-                    const drops = hitOre.getDrops();
-                    this.createExperienceOrbs(hitOre, drops);
-                }
-            }
+        // Calculate attack arc position - use attack length as distance from player
+        const attackX = player.x + Math.cos(this.direction) * AXE_ATTACK_LENGTH;
+        const attackY = player.y + Math.sin(this.direction) * AXE_ATTACK_LENGTH;
+        
+        // Debug visualization - add to window for render if needed
+        if (window.game && window.game.debug) {
+            window.attackVisuals = window.attackVisuals || [];
+            window.attackVisuals.push({
+                x: attackX,
+                y: attackY,
+                radius: AXE_ATTACK_RADIUS,
+                created: Date.now(),
+                lifetime: 500
+            });
         }
         
-        // Check for tree hits
-        if (window.game && window.game.treeManager && !hitSomething) {
-            const nearbyTrees = window.game.treeManager.getTreesInRadius(attackX, attackY, 30);
+        // Try hitting BOTH trees and ores - axe can hit both
+        
+        // --- TREE HIT DETECTION ---
+        let nearbyTrees = [];
+        
+        // Try different ways to access trees, in order of preference
+        if (window.game && window.game.treeSystem && window.game.treeSystem.getTreesInRadius) {
+            nearbyTrees = window.game.treeSystem.getTreesInRadius(attackX, attackY, AXE_ATTACK_RADIUS);
+        } else if (window.treeSystem && window.treeSystem.getTreesInRadius) {
+            nearbyTrees = window.treeSystem.getTreesInRadius(attackX, attackY, AXE_ATTACK_RADIUS);
+        } else if (window.treeManager && window.treeManager.getTreesInRadius) {
+            nearbyTrees = window.treeManager.getTreesInRadius(attackX, attackY, AXE_ATTACK_RADIUS);
+        }
+        
+        // Process tree hits
+        if (nearbyTrees && nearbyTrees.length > 0) {
+            // Find closest tree
+            let closestTree = null;
+            let closestDistance = AXE_ATTACK_RADIUS;
             
             for (const tree of nearbyTrees) {
                 if (tree.chopped) continue;
                 
-                // Check if the attack hit the tree
                 const dx = tree.x - attackX;
                 const dy = tree.y - attackY;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 
-                if (distance < 30) { // Reasonable hit range for trees
-                    // Apply woodcutting skill bonuses if available
-                    let damageMultiplier = 1.0;
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestTree = tree;
+                }
+            }
+            
+            if (closestTree) {
+                console.log(`Hitting tree at (${closestTree.x}, ${closestTree.y}) with axe`);
+                
+                // Apply woodcutting skill bonus if it exists
+                let damageMultiplier = 1.0;
+                if (window.game && window.game.skillsManager) {
+                    const woodcuttingSkill = window.game.skillsManager.getSkill('woodcutting');
+                    if (woodcuttingSkill) {
+                        const level = woodcuttingSkill.level || 1;
+                        damageMultiplier = 1 + (Math.floor(level / 10) * 0.1); // 10% per 10 levels
+                    }
+                }
+                
+                const damage = Math.floor(this.damage * damageMultiplier);
+                
+                // Hit the tree
+                let treeDestroyed = false;
+                if (typeof closestTree.hit === 'function') {
+                    treeDestroyed = closestTree.hit(damage, player);
+                } else if (closestTree.health !== undefined) {
+                    closestTree.health -= damage;
+                    if (closestTree.health <= 0) {
+                        closestTree.health = 0;
+                        treeDestroyed = true;
+                        // Try to call chop method if it exists
+                        if (typeof closestTree.chop === 'function') {
+                            closestTree.chop();
+                        }
+                    }
+                }
+                
+                // Register hit
+                this.hasHit = true;
+                hitSomething = true;
+                
+                // Create wood particles
+                this.createWoodParticles(closestTree.x, closestTree.y, closestTree.trunkColor || '#8B4513');
+                
+                // Play hit sound
+                this.playHitSound();
+                
+                // Create experience orbs if tree was destroyed
+                if (treeDestroyed) {
+                    console.log("Tree chopped down!");
+                    const drops = closestTree.getDrops ? closestTree.getDrops() : { experience: 10 };
+                    this.createWoodExperienceOrbs(closestTree, drops);
+                }
+                
+                // Add to hit trees for visual effect
+                if (!window.hitRocks) window.hitRocks = new Set();
+                if (!window.rockHitTimes) window.rockHitTimes = new Map();
+                
+                window.hitRocks.add(closestTree);
+                window.rockHitTimes.set(closestTree, Date.now());
+            }
+        }
+        
+        // --- ORE HIT DETECTION ---
+        // Try hitting ores (axe can hit rocks too, just less efficiently)
+        if (window.oreManager) {
+            // Get ores within range
+            const ores = window.oreManager.getOres ? window.oreManager.getOres() : window.ores;
+            if (ores && ores.length > 0) {
+                // Find closest ore
+                let closestOre = null;
+                let closestDistance = AXE_ATTACK_RADIUS;
+                
+                for (const ore of ores) {
+                    if (!ore || ore.broken || ore.health <= 0) continue;
                     
-                    if (player && window.game && window.game.skillsManager) {
-                        const woodcuttingSkill = window.game.skillsManager.getSkill('woodcutting');
-                        
-                        if (woodcuttingSkill) {
-                            const level = woodcuttingSkill.level || 1;
-                            
-                            // Apply damage bonus based on woodcutting level
-                            // 5% bonus per 10 levels
-                            damageMultiplier = 1 + (Math.floor(level / 10) * 0.05);
+                    const dx = ore.x - attackX;
+                    const dy = ore.y - attackY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        closestOre = ore;
+                    }
+                }
+                
+                if (closestOre) {
+                    console.log(`Hitting ore at (${closestOre.x}, ${closestOre.y}) with axe`);
+                    
+                    // Axe deals 50% damage to ores compared to pickaxe
+                    const damage = Math.floor(this.damage * 0.5);
+                    let oreDestroyed = false;
+                    
+                    // Apply damage to ore
+                    if (typeof closestOre.hit === 'function') {
+                        oreDestroyed = closestOre.hit(damage, player);
+                    } else if (closestOre.health !== undefined) {
+                        closestOre.health -= damage;
+                        if (closestOre.health <= 0) {
+                            closestOre.health = 0;
+                            oreDestroyed = true;
                         }
                     }
                     
-                    // Calculate damage for trees
-                    const baseDamage = this.damage * damageMultiplier;
-                    const damage = Math.max(1, Math.floor(baseDamage / tree.hardness));
-                    
-                    // Apply damage to the tree
-                    const treeDestroyed = tree.hit(damage, player);
+                    // Register hit
                     this.hasHit = true;
                     hitSomething = true;
                     
-                    // Create wood chip particles at hit location
-                    this.createWoodParticles(tree.x, tree.y, tree.trunkColor);
+                    // Create particles at hit location
+                    this.createDefaultParticles(closestOre.x, closestOre.y, closestOre.color);
                     
                     // Play hit sound
                     this.playHitSound();
                     
-                    // If tree was chopped, create experience orbs
-                    if (treeDestroyed) {
-                        const drops = tree.getDrops();
-                        this.createWoodExperienceOrbs(tree, drops);
-                    }
+                    // Add to hit rocks for visual effect
+                    if (!window.hitRocks) window.hitRocks = new Set();
+                    if (!window.rockHitTimes) window.rockHitTimes = new Map();
                     
-                    break; // Only hit one tree at a time
+                    window.hitRocks.add(closestOre);
+                    window.rockHitTimes.set(closestOre, Date.now());
+                    
+                    // Create experience orbs if ore was destroyed
+                    if (oreDestroyed) {
+                        const drops = closestOre.getDrops ? closestOre.getDrops() : { experience: 5 };
+                        this.createExperienceOrbs(closestOre, drops);
+                    }
                 }
             }
         }
