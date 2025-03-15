@@ -405,6 +405,19 @@ class Game {
                 }
             }
             
+            // Initialize skills manager
+            try {
+                if (window.SkillsManager) {
+                    this.skillsManager = new window.SkillsManager(this.myPlayer);
+                    window.skillsManager = this.skillsManager;
+                    console.log("SkillsManager initialized");
+                } else {
+                    console.error("SkillsManager not found");
+                }
+            } catch (error) {
+                console.error("Error initializing SkillsManager:", error);
+            }
+            
             // Make managers globally available if needed
             if (this.equipmentManager) window.equipmentManager = this.equipmentManager;
             if (this.inventoryManager && this.inventoryManager.inventory) window.playerInventory = this.inventoryManager.inventory;

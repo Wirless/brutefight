@@ -137,6 +137,13 @@ This document outlines the plan for refactoring the BruteFight game from its cur
   - Fixed camera position variables in ground rendering code
   - Added proper world initialization with ground colors
 
+- Fixed skills system and mining progression
+  - Implemented SkillsManager from the old code into the new modular structure
+  - Fixed mining experience tracking when hitting and breaking rocks
+  - Added UI for displaying skills and progress
+  - Added skill level-up animations and notifications
+  - Added key 'K' shortcut to open/close the skills window
+
 - Fixed interaction between UI systems
   - Movement controls now properly disabled when chat is focused
   - Key handlers now check for control state before processing input
