@@ -27,7 +27,10 @@ export const XP_ORB_CONFIG = {
     
     // Value properties
     minValue: 10, // Minimum XP value
-    maxValue: 500 // Maximum XP value
+    maxValue: 500, // Maximum XP value
+    collectRadius: 20, // Radius for collection
+    minSize: 4,
+    maxSize: 12
 };
 
 /**
@@ -47,8 +50,8 @@ class ExperienceOrb {
         this.amount = amount || Math.floor(Math.random() * (XP_ORB_CONFIG.maxValue - XP_ORB_CONFIG.minValue)) + XP_ORB_CONFIG.minValue;
         this.collected = false;
         this.expiresAt = Date.now() + XP_ORB_CONFIG.lifetime;
-        this.velocityX = 0;
-        this.velocityY = 0;
+        this.vx = 0;
+        this.vy = 0;
         this.createdAt = Date.now();
         
         // Visual properties
@@ -68,8 +71,36 @@ class ExperienceOrb {
  * @param {number} amount - Amount of experience (optional)
  * @returns {Object} - Experience orb object
  */
-export function createExperienceOrb(x, y, amount) {
-    return new ExperienceOrb(x, y, amount);
+export function createExperienceOrb(x, y, amount = 1) {
+    // Validate and normalize inputs
+    x = x || 0;
+    y = y || 0;
+    amount = Math.max(1, Math.min(amount, XP_ORB_CONFIG.maxValue));
+    
+    // Calculate size based on experience amount
+    const minSize = XP_ORB_CONFIG.minSize;
+    const maxSize = XP_ORB_CONFIG.maxSize;
+    const sizeRange = maxSize - minSize;
+    
+    // Logarithmic scale for size based on amount
+    const normalizedAmount = Math.log(amount) / Math.log(XP_ORB_CONFIG.maxValue);
+    const size = minSize + sizeRange * Math.min(1, normalizedAmount);
+    
+    // Create the orb object
+    return {
+        x,
+        y,
+        amount,
+        size,
+        scale: 1.0, // For pulsing animation
+        opacity: 1.0,
+        collected: false,
+        expired: false,
+        creationTime: Date.now(), // Add creationTime property
+        vx: 0,
+        vy: 0,
+        createdAt: Date.now()
+    };
 }
 
 /**
@@ -81,19 +112,37 @@ function generateOrbId() {
 }
 
 /**
- * Update an experience orb's position and state
+ * Update the experience orb
  * @param {Object} orb - Experience orb to update
- * @param {Object} player - Player object with x and y properties
- * @param {number} deltaTime - Time since last update in ms
- * @returns {boolean} - Whether the orb was collected
+ * @param {Object} player - Player position
+ * @param {number} deltaTime - Time elapsed since last update
+ * @returns {boolean} - Whether the orb should be removed
  */
-export function updateExperienceOrb(orb, player, deltaTime) {
-    // Skip if already collected or expired
-    if (orb.collected) return true;
+function updateExperienceOrb(orb, player, deltaTime) {
+    // If already collected, update animation
+    if (orb.collected) {
+        orb.collectAnimation += deltaTime * 0.01;
+        
+        // Remove after collection animation completes
+        if (orb.collectAnimation >= 1) {
+            // Orb is fully collected now, return true to remove it and add experience
+            return true;
+        }
+        
+        // Fade out the orb
+        orb.opacity = 1 - orb.collectAnimation;
+        
+        // Update the orb position (move toward player as it collects)
+        orb.x = orb.collectedX + (player.x - orb.collectedX) * orb.collectAnimation;
+        orb.y = orb.collectedY + (player.y - orb.collectedY) * orb.collectAnimation;
+        
+        // Still animating collection, don't remove yet
+        return false;
+    }
     
-    // Check if orb has expired
-    if (Date.now() > orb.expiresAt) {
-        orb.collected = true;
+    // Check for expiration
+    if (orb.creationTime && Date.now() - orb.creationTime > XP_ORB_CONFIG.lifetime) {
+        orb.expired = true;
         return true;
     }
     
@@ -102,58 +151,84 @@ export function updateExperienceOrb(orb, player, deltaTime) {
     const dy = player.y - orb.y;
     const distanceToPlayer = Math.sqrt(dx * dx + dy * dy);
     
-    // Pulse size based on time
-    const pulsePhase = (Date.now() - orb.createdAt) % XP_ORB_CONFIG.pulseFrequency / XP_ORB_CONFIG.pulseFrequency;
-    orb.scale = 1 + 0.2 * Math.sin(pulsePhase * Math.PI * 2);
+    // Magnetize to player if within range (50 pixels)
+    const magnetRadius = 50;
     
-    // Calculate opacity based on remaining lifetime
-    orb.opacity = calculateOrbOpacity(orb);
-    
-    // Check if orb should be collected (player is close enough)
-    if (distanceToPlayer <= XP_ORB_CONFIG.collectionDistance) {
-        orb.collected = true;
-        return true;
-    }
-    
-    // Check if orb should move toward player (magnetism)
-    const shouldMoveToPlayer = distanceToPlayer <= XP_ORB_CONFIG.magnetDistance;
-    
-    // Update velocity
-    if (shouldMoveToPlayer) {
-        // Calculate direction to player
-        const directionX = dx / distanceToPlayer;
-        const directionY = dy / distanceToPlayer;
+    if (distanceToPlayer <= magnetRadius) {
+        // Normalize direction vector
+        const length = Math.max(0.1, distanceToPlayer);
+        const ndx = dx / length;
+        const ndy = dy / length;
         
-        // Calculate speed (accelerate over time)
-        let speed = XP_ORB_CONFIG.moveSpeed;
+        // Calculate the acceleration based on distance (stronger pull when closer)
+        const acceleration = 0.1 + (1 - (distanceToPlayer / magnetRadius)) * 0.4;
         
-        // If orb wasn't previously moving to player, start acceleration
-        if (!orb.isMovingToPlayer) {
-            orb.isMovingToPlayer = true;
-            orb.accelerationStartTime = Date.now();
+        // Accelerate towards player
+        orb.vx += ndx * acceleration * (deltaTime / 16);
+        orb.vy += ndy * acceleration * (deltaTime / 16);
+        
+        // Cap maximum velocity
+        const maxSpeed = 5;
+        const speed = Math.sqrt(orb.vx * orb.vx + orb.vy * orb.vy);
+        if (speed > maxSpeed) {
+            orb.vx = (orb.vx / speed) * maxSpeed;
+            orb.vy = (orb.vy / speed) * maxSpeed;
         }
-        
-        // Accelerate based on how long we've been moving toward player
-        const accelerationTime = (Date.now() - orb.accelerationStartTime) / 1000; // in seconds
-        speed *= (1 + accelerationTime * XP_ORB_CONFIG.accelerationRate);
-        
-        // Update velocity
-        orb.velocityX = directionX * speed;
-        orb.velocityY = directionY * speed;
     } else {
-        // Slow down if not moving toward player
-        orb.velocityX *= 0.95;
-        orb.velocityY *= 0.95;
-        orb.isMovingToPlayer = false;
+        // Slow down when not magnetized
+        orb.vx *= 0.98;
+        orb.vy *= 0.98;
+        
+        // Add some gentle floating motion
+        orb.vx += (Math.random() - 0.5) * 0.05;
+        orb.vy += (Math.random() - 0.5) * 0.05;
     }
     
-    // Update position
-    const seconds = deltaTime / 1000;
-    orb.x += orb.velocityX * seconds;
-    orb.y += orb.velocityY * seconds;
+    // Apply velocity
+    orb.x += orb.vx * (deltaTime / 16);
+    orb.y += orb.vy * (deltaTime / 16);
     
-    // Orb wasn't collected
+    // Check for collection (player touching orb)
+    if (distanceToPlayer < XP_ORB_CONFIG.collectRadius) {
+        // Mark as collected and store collection position
+        orb.collected = true;
+        orb.collectedX = orb.x;
+        orb.collectedY = orb.y;
+        orb.collectAnimation = 0;
+        
+        // Play sound effect
+        playCollectionSound(orb.amount);
+        
+        // Don't remove yet, let the collection animation play
+        return false;
+    }
+    
+    // Not collected, don't remove
     return false;
+}
+
+/**
+ * Play a sound effect when collecting an orb
+ * @param {number} amount - Experience amount
+ */
+function playCollectionSound(amount) {
+    try {
+        const isLargeAmount = amount >= 10;
+        
+        if (window.game && window.game.assetLoader) {
+            // Use game's asset loader for sounds
+            window.game.assetLoader.playSound(isLargeAmount ? 'levelUp' : 'expPickup', 0.3);
+        } else if (window.audioContext) {
+            // Fallback to direct audio playing
+            const soundName = isLargeAmount ? 'sounds/levelup.mp3' : 'sounds/collect.mp3';
+            const sound = window.soundsCache && window.soundsCache[soundName] ? 
+                window.soundsCache[soundName].cloneNode() : new Audio(soundName);
+            sound.volume = 0.3;
+            sound.play().catch(err => console.log('Sound play failed:', err));
+        }
+    } catch (error) {
+        console.error("Error playing collection sound:", error);
+    }
 }
 
 /**
@@ -274,8 +349,19 @@ class ExperienceOrbManager {
             // Remove if necessary
             if (shouldRemove) {
                 // If the orb was collected, add XP to player
-                if (orb.collected && !orb.expired && this.game && this.game.myPlayer) {
-                    this.game.myPlayer.experience += orb.amount;
+                if (orb.collected && !orb.expired) {
+                    // Try to use the global addExperience function first
+                    if (window.addExperience) {
+                        window.addExperience(orb.amount);
+                    }
+                    // Fall back to updating the player directly
+                    else if (this.game && this.game.myPlayer) {
+                        if (this.game.addExperience) {
+                            this.game.addExperience(orb.amount);
+                        } else {
+                            this.game.myPlayer.experience = (this.game.myPlayer.experience || 0) + orb.amount;
+                        }
+                    }
                 }
                 
                 this.orbs.splice(i, 1);
@@ -329,6 +415,72 @@ class ExperienceOrbManager {
         
         // Reset alpha
         ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Create an orb burst at a position
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     * @param {number} count - Number of orbs to create
+     * @param {number} totalExp - Total experience to distribute
+     * @returns {Array} - Array of created orbs
+     */
+    createOrbBurst(x, y, count, totalExp) {
+        const orbs = [];
+        
+        // Make sure count and totalExp are valid
+        count = Math.max(1, count || 3);
+        totalExp = Math.max(1, totalExp || 10);
+        
+        // Create a distribution of experience amounts
+        let remainingExp = totalExp;
+        let remainingOrbs = count;
+        
+        // Create first orb as the largest (30-50% of total)
+        let firstOrbExp = Math.ceil(totalExp * (0.3 + Math.random() * 0.2));
+        let firstOrb = this.createOrb(x, y, firstOrbExp);
+        remainingExp -= firstOrbExp;
+        remainingOrbs--;
+        orbs.push(firstOrb);
+        
+        // Create orbs in a circular pattern
+        for (let i = 0; i < remainingOrbs; i++) {
+            // Calculate how much experience this orb should get
+            let orbExp;
+            
+            if (i === remainingOrbs - 1) {
+                // Last orb gets all remaining experience
+                orbExp = remainingExp;
+            } else {
+                // Randomize experience distribution for visual appeal
+                const avgExpPerOrb = remainingExp / remainingOrbs;
+                orbExp = Math.max(1, Math.floor(avgExpPerOrb * (0.5 + Math.random())));
+            }
+            
+            // Ensure we don't exceed remaining experience
+            orbExp = Math.min(orbExp, remainingExp);
+            
+            // Calculate position in a circular pattern
+            const angle = (i / remainingOrbs) * Math.PI * 2;
+            const distance = 5 + Math.random() * 15;
+            const orbX = x + Math.cos(angle) * distance;
+            const orbY = y + Math.sin(angle) * distance;
+            
+            // Create the orb with calculated experience
+            const orb = this.createOrb(orbX, orbY, orbExp);
+            
+            // Add some initial velocity away from center
+            orb.vx = Math.cos(angle) * (1 + Math.random() * 2);
+            orb.vy = Math.sin(angle) * (1 + Math.random() * 2);
+            
+            orbs.push(orb);
+            
+            // Update remaining values
+            remainingExp -= orbExp;
+            remainingOrbs--;
+        }
+        
+        return orbs;
     }
 }
 

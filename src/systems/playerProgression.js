@@ -113,6 +113,212 @@ export function getLevelsGained(oldXp, newXp) {
     return levelsGained;
 } 
 
+/**
+ * Create and manage the experience bar UI
+ */
+export class ExperienceBar {
+    /**
+     * Create a new experience bar
+     * @param {Object} player - The player object
+     * @param {Object} options - Configuration options
+     */
+    constructor(player, options = {}) {
+        this.player = player;
+        this.options = Object.assign({
+            containerId: 'gamePanel',
+            width: '50%',
+            height: '15px',
+            barColor: 'rgb(0, 233, 150)',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            borderColor: 'rgb(0, 233, 150)',
+            textColor: 'white',
+            fontSize: '10px',
+            position: 'top',
+            margin: '5px'
+        }, options);
+        
+        // Create UI elements
+        this.createUI();
+        
+        // Initial update
+        this.update();
+    }
+    
+    /**
+     * Create the experience bar UI elements
+     */
+    createUI() {
+        // Get container
+        this.container = document.getElementById(this.options.containerId);
+        if (!this.container) {
+            console.error(`Container with ID ${this.options.containerId} not found`);
+            return;
+        }
+        
+        // Create experience bar container
+        this.barContainer = document.createElement('div');
+        this.barContainer.className = 'exp-bar-container';
+        this.barContainer.style.position = 'absolute';
+        this.barContainer.style.top = this.options.position === 'top' ? this.options.margin : 'auto';
+        this.barContainer.style.left = '50%';
+        this.barContainer.style.transform = 'translateX(-50%)';
+        this.barContainer.style.width = this.options.width;
+        this.barContainer.style.height = this.options.height;
+        this.barContainer.style.backgroundColor = this.options.backgroundColor;
+        this.barContainer.style.border = `2px solid ${this.options.borderColor}`;
+        this.barContainer.style.borderRadius = '8px';
+        this.barContainer.style.overflow = 'hidden';
+        this.barContainer.style.zIndex = '999';
+        
+        // Create the progress bar
+        this.progressBar = document.createElement('div');
+        this.progressBar.className = 'exp-progress-bar';
+        this.progressBar.style.height = '100%';
+        this.progressBar.style.width = '0%';
+        this.progressBar.style.backgroundColor = this.options.barColor;
+        this.progressBar.style.transition = 'width 0.3s ease-out';
+        
+        // Create the text display
+        this.textDisplay = document.createElement('div');
+        this.textDisplay.className = 'exp-text';
+        this.textDisplay.style.position = 'absolute';
+        this.textDisplay.style.top = '0';
+        this.textDisplay.style.left = '0';
+        this.textDisplay.style.right = '0';
+        this.textDisplay.style.bottom = '0';
+        this.textDisplay.style.display = 'flex';
+        this.textDisplay.style.alignItems = 'center';
+        this.textDisplay.style.justifyContent = 'center';
+        this.textDisplay.style.color = this.options.textColor;
+        this.textDisplay.style.fontSize = this.options.fontSize;
+        this.textDisplay.style.fontWeight = 'bold';
+        this.textDisplay.style.textShadow = '1px 1px 1px black';
+        
+        // Create the total XP display
+        this.totalXpDisplay = document.createElement('div');
+        this.totalXpDisplay.className = 'total-xp';
+        this.totalXpDisplay.style.position = 'absolute';
+        this.totalXpDisplay.style.top = `calc(${this.options.height} + 5px)`;
+        this.totalXpDisplay.style.left = '50%';
+        this.totalXpDisplay.style.transform = 'translateX(-50%)';
+        this.totalXpDisplay.style.color = this.options.textColor;
+        this.totalXpDisplay.style.fontSize = this.options.fontSize;
+        this.totalXpDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        this.totalXpDisplay.style.padding = '2px 6px';
+        this.totalXpDisplay.style.borderRadius = '4px';
+        
+        // Assemble the components
+        this.barContainer.appendChild(this.progressBar);
+        this.barContainer.appendChild(this.textDisplay);
+        this.container.appendChild(this.barContainer);
+        this.container.appendChild(this.totalXpDisplay);
+    }
+    
+    /**
+     * Update the experience bar with current player data
+     */
+    update() {
+        if (!this.player) return;
+        
+        // Calculate progress
+        const totalXp = this.player.experience || 0;
+        const progress = calculateLevelProgress(totalXp);
+        
+        // Update the progress bar width
+        this.progressBar.style.width = `${progress.percentage}%`;
+        
+        // Update the text displays
+        this.textDisplay.textContent = `Level ${progress.level} - ${progress.currentXp}/${progress.requiredXp} XP`;
+        this.totalXpDisplay.textContent = `Total XP: ${totalXp}`;
+    }
+    
+    /**
+     * Show a level up animation
+     * @param {number} newLevel - The new level achieved
+     */
+    showLevelUpAnimation(newLevel) {
+        // Create level up message
+        const message = document.createElement('div');
+        message.className = 'level-up-message';
+        message.textContent = `LEVEL UP! You are now level ${newLevel}`;
+        
+        message.style.position = 'absolute';
+        message.style.top = '50%';
+        message.style.left = '50%';
+        message.style.transform = 'translate(-50%, -50%)';
+        message.style.backgroundColor = 'rgba(0, 233, 150, 0.9)';
+        message.style.color = 'white';
+        message.style.padding = '20px';
+        message.style.borderRadius = '10px';
+        message.style.fontWeight = 'bold';
+        message.style.fontSize = '24px';
+        message.style.textAlign = 'center';
+        message.style.boxShadow = '0 0 20px rgba(0, 233, 150, 0.7)';
+        message.style.zIndex = '1001';
+        message.style.animation = 'levelUpAnimation 2s forwards';
+        
+        // Add animation style
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes levelUpAnimation {
+                0% { opacity: 0; transform: translate(-50%, -80%); }
+                20% { opacity: 1; transform: translate(-50%, -50%); }
+                80% { opacity: 1; transform: translate(-50%, -50%); }
+                100% { opacity: 0; transform: translate(-50%, -20%); }
+            }
+        `;
+        
+        document.head.appendChild(style);
+        document.body.appendChild(message);
+        
+        // Remove message after animation
+        setTimeout(() => {
+            document.body.removeChild(message);
+        }, 2000);
+        
+        // Play level up sound if available
+        try {
+            if (window.audioContext) {
+                const sound = window.soundsCache ? window.soundsCache['sounds/levelup.mp3'] : new Audio('sounds/levelup.mp3');
+                sound.volume = 0.5;
+                sound.play().catch(err => console.log('Sound play failed:', err));
+            }
+        } catch (error) {
+            console.error("Error playing level up sound:", error);
+        }
+    }
+    
+    /**
+     * Handle experience gain
+     * @param {number} amount - Amount of experience gained
+     * @returns {boolean} - True if the player leveled up
+     */
+    addExperience(amount) {
+        if (!this.player) return false;
+        
+        // Store old experience and level
+        const oldXp = this.player.experience || 0;
+        const oldLevel = calculateLevelFromExperience(oldXp);
+        
+        // Add experience
+        this.player.experience = oldXp + amount;
+        
+        // Calculate new level
+        const newLevel = calculateLevelFromExperience(this.player.experience);
+        
+        // Update the UI
+        this.update();
+        
+        // Check if the player leveled up
+        if (newLevel > oldLevel) {
+            this.showLevelUpAnimation(newLevel);
+            return true;
+        }
+        
+        return false;
+    }
+}
+
 // Create a playerProgression object that contains all exported functions
 const playerProgression = {
     BASE_XP,
@@ -122,7 +328,8 @@ const playerProgression = {
     calculateLevelFromExperience,
     calculateLevelProgress,
     hasLeveledUp,
-    getLevelsGained
+    getLevelsGained,
+    ExperienceBar
 };
 
 // Make playerProgression available globally for backward compatibility

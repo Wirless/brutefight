@@ -89,6 +89,14 @@ class Game {
         window.rockHitDuration = window.rockHitDuration || 500; // How long rocks show hit effect (ms)
         window.rockParticles = window.rockParticles || [];
 
+        // Set the global addExperience function so other systems can use it
+        window.addExperience = (amount) => {
+            if (this.addExperience) {
+                return this.addExperience(amount);
+            }
+            return false;
+        };
+
         // Initialize sounds if Web Audio API is available
         try {
             window.audioEnabled = true;
@@ -255,6 +263,9 @@ class Game {
         // Generate initial game world
         this.generateInitialWorld();
         
+        // Initialize experience bar
+        this.initExperienceBar();
+        
         // Set up auto-save interval
         this.setupAutoSave();
         
@@ -271,6 +282,61 @@ class Game {
             });
         } else {
             console.log(`Welcome to the game, ${this.username}! Use WASD to move and SPACE to attack.`);
+        }
+    }
+
+    /**
+     * Initialize experience bar UI
+     */
+    initExperienceBar() {
+        try {
+            // Check if PlayerProgression exists
+            if (window.PlayerProgression && window.PlayerProgression.ExperienceBar) {
+                // Create experience bar UI
+                this.experienceBar = new window.PlayerProgression.ExperienceBar(this.myPlayer, {
+                    containerId: 'gamePanel',
+                    width: '60%',
+                    height: '18px',
+                    fontSize: '12px'
+                });
+                
+                // Make the experience bar globally available
+                window.experienceBar = this.experienceBar;
+                
+                console.log("Experience bar initialized successfully");
+            } else {
+                console.error("PlayerProgression.ExperienceBar not found");
+            }
+        } catch (error) {
+            console.error("Error initializing experience bar:", error);
+        }
+    }
+    
+    /**
+     * Add experience to the player
+     * @param {number} amount - Amount of experience to add
+     * @returns {boolean} - Whether the player leveled up
+     */
+    addExperience(amount) {
+        if (!this.myPlayer) return false;
+        
+        // If we have the experience bar, use it
+        if (this.experienceBar) {
+            return this.experienceBar.addExperience(amount);
+        } 
+        // Otherwise update the player's experience directly
+        else {
+            const oldExp = this.myPlayer.experience || 0;
+            const oldLevel = window.PlayerProgression ? 
+                window.PlayerProgression.calculateLevelFromExperience(oldExp) : 1;
+            
+            this.myPlayer.experience = oldExp + amount;
+            
+            // Calculate new level
+            const newLevel = window.PlayerProgression ? 
+                window.PlayerProgression.calculateLevelFromExperience(this.myPlayer.experience) : 1;
+            
+            return newLevel > oldLevel;
         }
     }
 
@@ -858,6 +924,11 @@ class Game {
             window.expOrbManager.update(this.myPlayer.x, this.myPlayer.y, deltaTime);
         }
         
+        // Update experience bar if it exists
+        if (this.experienceBar) {
+            this.experienceBar.update();
+        }
+        
         // Send updates to server at fixed intervals
         this.serverUpdateInterval += deltaTime;
         if (moved && this.serverUpdateInterval >= this.SERVER_UPDATE_RATE) {
@@ -973,7 +1044,8 @@ class Game {
     }
 
     /**
-     * Update hit rocks visual effect
+     * Update hit rocks effect
+     * @param {number} deltaTime - Time elapsed since last update
      */
     updateHitRocksEffect(deltaTime) {
         // Make sure hitRocks is initialized
@@ -1001,77 +1073,236 @@ class Game {
                 window.rockHitTimes.delete(rock);
             }
         }
+    }
+
+    /**
+     * Render hit rocks effects
+     */
+    renderHitRocks() {
+        // Make sure hitRocks is initialized
+        if (!window.hitRocks || !window.rockHitTimes) return;
         
-        // Update particles
-        if (window.rockParticles && window.rockParticles.length > 0) {
-            for (let i = window.rockParticles.length - 1; i >= 0; i--) {
-                const particle = window.rockParticles[i];
+        // Get context for rendering
+        const ctx = this.ctx;
+        
+        // Check each hit rock
+        for (const rock of window.hitRocks) {
+            // Skip if invalid
+            if (!rock || !window.rockHitTimes.has(rock)) continue;
+            
+            // Calculate hit effect progress (0 to 1)
+            const hitTime = window.rockHitTimes.get(rock);
+            const progress = Math.min(1, (Date.now() - hitTime) / window.rockHitDuration);
+            
+            // Convert to screen coordinates
+            const screenX = rock.x - Math.floor(this.cameraX);
+            const screenY = rock.y - Math.floor(this.cameraY);
+            
+            // Skip if offscreen
+            if (screenX < -50 || screenX > this.canvas.width + 50 || 
+                screenY < -50 || screenY > this.canvas.height + 50) {
+                continue;
+            }
+            
+            // Draw hit effect
+            ctx.save();
+            
+            // Outer glow
+            const glowRadius = rock.radius * (1.2 + progress * 0.3);
+            const gradient = ctx.createRadialGradient(
+                screenX, screenY, rock.radius,
+                screenX, screenY, glowRadius
+            );
+            
+            // White flash that fades to rock color
+            gradient.addColorStop(0, `rgba(255, 255, 255, ${0.7 * (1 - progress)})`);
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, glowRadius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Create cracks/fracture lines
+            if (progress < 0.5) {
+                const crackCount = 4;
+                const maxLength = rock.radius * 1.5;
+                const fadeAlpha = 0.8 * (1 - progress * 2); // Fade out cracks
                 
-                // Update particle position
-                particle.x += particle.vx * deltaTime;
-                particle.y += particle.vy * deltaTime;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${fadeAlpha})`;
+                ctx.lineWidth = 2;
                 
-                // Apply gravity
-                particle.vy += 0.002 * deltaTime;
-                
-                // Reduce lifespan
-                particle.life -= deltaTime;
-                
-                // Remove dead particles
-                if (particle.life <= 0) {
-                    window.rockParticles.splice(i, 1);
+                for (let i = 0; i < crackCount; i++) {
+                    const angle = (Math.PI * 2 * i / crackCount) + 
+                                  (rock.id % 100) / 100 * Math.PI; // Randomize based on rock ID
+                    
+                    const length = maxLength * (0.7 + 0.3 * Math.sin(rock.id + i));
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(screenX, screenY);
+                    ctx.lineTo(
+                        screenX + Math.cos(angle) * length,
+                        screenY + Math.sin(angle) * length
+                    );
+                    ctx.stroke();
                 }
             }
+            
+            // Draw health bar for rock
+            this.drawRockHealthBar(ctx, rock, screenX, screenY);
+            
+            ctx.restore();
         }
+    }
+
+    /**
+     * Draw health bar for a rock
+     * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {Object} rock - Rock object
+     * @param {number} x - Screen X position
+     * @param {number} y - Screen Y position
+     */
+    drawRockHealthBar(ctx, rock, x, y) {
+        // Only draw if rock has health
+        if (!rock.health || !rock.maxHealth) return;
+        
+        // If rock is at full health, don't show the bar
+        if (rock.health >= rock.maxHealth && !window.hitRocks.has(rock)) return;
+        
+        // Health bar dimensions
+        const barWidth = rock.radius * 2;
+        const barHeight = 6;
+        const barY = y - rock.radius - 15;
+        
+        // Background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(x - barWidth/2, barY, barWidth, barHeight);
+        
+        // Border
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x - barWidth/2, barY, barWidth, barHeight);
+        
+        // Calculate health percentage
+        const healthPercent = rock.health / rock.maxHealth;
+        
+        // Choose color based on health percentage
+        let barColor;
+        if (healthPercent > 0.6) {
+            barColor = 'rgba(0, 255, 0, 0.8)'; // Green
+        } else if (healthPercent > 0.3) {
+            barColor = 'rgba(255, 255, 0, 0.8)'; // Yellow
+        } else {
+            barColor = 'rgba(255, 0, 0, 0.8)'; // Red
+        }
+        
+        // Fill health bar
+        ctx.fillStyle = barColor;
+        ctx.fillRect(
+            x - barWidth/2, 
+            barY, 
+            barWidth * healthPercent, 
+            barHeight
+        );
+        
+        // Highlight on top of health bar
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.fillRect(
+            x - barWidth/2, 
+            barY, 
+            barWidth * healthPercent, 
+            barHeight/2
+        );
     }
 
     /**
      * Update rock particles
      */
     updateRockParticles() {
-        const now = Date.now();
-        for (let i = window.rockParticles.length - 1; i >= 0; i--) {
-            const particle = window.rockParticles[i];
+        // Make sure rockParticles is initialized
+        if (!window.rockParticles) {
+            window.rockParticles = [];
+            return;
+        }
+
+        // Update only if we have particles
+        if (window.rockParticles.length > 0) {
+            const now = Date.now();
             
-            // Update particle position
-            particle.x += particle.vx;
-            particle.y += particle.vy;
-            
-            // Apply gravity
-            particle.vy += 0.1;
-            
-            // Check if particle is dead
-            if (now - particle.created > particle.life) {
-                window.rockParticles.splice(i, 1);
+            // Update each particle and remove expired ones
+            for (let i = window.rockParticles.length - 1; i >= 0; i--) {
+                const particle = window.rockParticles[i];
+                
+                // Skip if invalid
+                if (!particle) {
+                    window.rockParticles.splice(i, 1);
+                    continue;
+                }
+                
+                // Check if particle has expired
+                if (particle.created && particle.lifetime) {
+                    if (now - particle.created > particle.lifetime) {
+                        window.rockParticles.splice(i, 1);
+                        continue;
+                    }
+                    
+                    // Fade out particles as they get older
+                    const age = now - particle.created;
+                    const lifeProgress = age / particle.lifetime;
+                    
+                    // Only fade in last 30% of lifetime
+                    if (lifeProgress > 0.7) {
+                        particle.opacity = 0.8 * (1 - ((lifeProgress - 0.7) / 0.3));
+                    }
+                }
+                
+                // Update particle velocity
+                if (particle.vx !== undefined && particle.vy !== undefined) {
+                    // Update position based on velocity
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    
+                    // Apply gravity
+                    particle.vy += 0.05;
+                    
+                    // Apply drag/friction
+                    particle.vx *= 0.98;
+                    particle.vy *= 0.98;
+                }
             }
         }
     }
 
     /**
-     * Render the game
+     * Render all game elements
      */
     render() {
-        // Clear the canvas
+        // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Draw floor/ground
+        // Render ground
         this.renderGround();
         
-        // Draw ores
-        this.oreManager.drawOres(this.ctx, this.cameraX, this.cameraY);
+        // Render rock hit effects
+        this.renderHitRocks();
         
-        // Draw particles
+        // Draw ores
+        if (this.oreManager && this.oreManager.drawOres) {
+            this.oreManager.drawOres(this.ctx, this.cameraX, this.cameraY);
+        }
+        
+        // Render particles
         this.renderParticles();
         
         // Draw experience orbs
-        if (window.expOrbManager) {
+        if (window.expOrbManager && window.expOrbManager.draw) {
             window.expOrbManager.draw(this.ctx, this.cameraX, this.cameraY);
         }
         
-        // Draw all players
+        // Render players
         this.renderPlayers();
         
-        // Draw attack effect
+        // Render attack effect
         this.renderAttackEffect();
         
         // Update minimap using the dedicated renderer
@@ -1106,8 +1337,38 @@ class Game {
      * Render all particles
      */
     renderParticles() {
-        // Base implementation - would be moved to ParticleSystem.js
-        // ... particle rendering code ...
+        if (!window.rockParticles || window.rockParticles.length === 0) return;
+        
+        // Get context for rendering
+        const ctx = this.ctx;
+        
+        // Render each particle
+        for (const particle of window.rockParticles) {
+            // Skip invalid particles
+            if (!particle || particle.opacity <= 0) continue;
+            
+            // Convert to screen coordinates
+            const screenX = particle.x - Math.floor(this.cameraX);
+            const screenY = particle.y - Math.floor(this.cameraY);
+            
+            // Skip if offscreen
+            if (screenX < -20 || screenX > this.canvas.width + 20 || 
+                screenY < -20 || screenY > this.canvas.height + 20) {
+                continue;
+            }
+            
+            // Set opacity
+            ctx.globalAlpha = particle.opacity;
+            
+            // Draw particle
+            ctx.fillStyle = particle.color || '#A9A9A9';
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, particle.size || 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Reset opacity
+        ctx.globalAlpha = 1;
     }
 
     /**
@@ -1138,8 +1399,123 @@ class Game {
      * Render a single player
      */
     renderPlayer(x, y, color, name, isCurrentPlayer, level, title) {
-        // Base implementation - would be moved to Renderer.js
-        // ... player rendering code ...
+        // Get screen coordinates
+        const screenX = x - Math.floor(this.cameraX);
+        const screenY = y - Math.floor(this.cameraY);
+        
+        // Get context for rendering
+        const ctx = this.ctx;
+        
+        // Check if the player is visible on screen (with margin)
+        if (screenX < -50 || screenX > this.canvas.width + 50 || 
+            screenY < -50 || screenY > this.canvas.height + 50) {
+            return;
+        }
+        
+        // Determine player radius (current player slightly bigger)
+        const radius = isCurrentPlayer ? 15 : 12;
+        
+        // Determine if player is attacking
+        const isAttacking = isCurrentPlayer && this.currentAttack && this.currentAttack.isActive;
+        
+        // Save current context state
+        ctx.save();
+        
+        // Draw player shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(screenX, screenY + radius * 0.8, radius * 0.8, radius * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw player body
+        ctx.fillStyle = color || '#3498db';
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Add highlight to create 3D effect
+        const gradient = ctx.createRadialGradient(
+            screenX - radius * 0.3, screenY - radius * 0.3, 0,
+            screenX, screenY, radius
+        );
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw player border
+        ctx.strokeStyle = isCurrentPlayer ? '#2980b9' : '#2c3e50';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // If attacking, draw attack indicator (a small triangle in attack direction)
+        if (isAttacking) {
+            const attackDirection = this.currentAttack.direction;
+            const indicatorDistance = radius + 5;
+            
+            const indicatorX = screenX + Math.cos(attackDirection) * indicatorDistance;
+            const indicatorY = screenY + Math.sin(attackDirection) * indicatorDistance;
+            
+            // Draw attack direction indicator
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.moveTo(
+                indicatorX + Math.cos(attackDirection) * 8,
+                indicatorY + Math.sin(attackDirection) * 8
+            );
+            ctx.lineTo(
+                indicatorX + Math.cos(attackDirection + Math.PI * 0.8) * 5,
+                indicatorY + Math.sin(attackDirection + Math.PI * 0.8) * 5
+            );
+            ctx.lineTo(
+                indicatorX + Math.cos(attackDirection - Math.PI * 0.8) * 5,
+                indicatorY + Math.sin(attackDirection - Math.PI * 0.8) * 5
+            );
+            ctx.closePath();
+            ctx.fill();
+        }
+        
+        // Draw player name
+        ctx.fillStyle = 'white';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        
+        // Add shadow to make text readable
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+        ctx.shadowBlur = 3;
+        ctx.shadowOffsetX = 1;
+        ctx.shadowOffsetY = 1;
+        
+        // Draw name above player
+        ctx.fillText(name, screenX, screenY - radius - 5);
+        
+        // If player has a title, draw it below the name
+        if (title) {
+            ctx.font = '10px Arial';
+            ctx.fillStyle = '#f1c40f'; // Gold color
+            ctx.fillText(title, screenX, screenY - radius - 20);
+        }
+        
+        // If player has a level, draw it
+        if (level) {
+            ctx.font = '10px Arial';
+            ctx.fillStyle = '#2ecc71'; // Green color
+            ctx.fillText(`Lv.${level}`, screenX, screenY - radius - 35);
+        }
+        
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        
+        // Restore context state
+        ctx.restore();
     }
 
     /**

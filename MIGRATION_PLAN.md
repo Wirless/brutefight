@@ -48,6 +48,22 @@ This document outlines the plan for refactoring the BruteFight game from its cur
 - ✅ Created Inventory class in equipment module
 - ✅ Set up proper export structure for backward compatibility using window.* objects
 
+### Rendering and Visual Effects Fixes
+- ✅ Fixed rock hit effects in attacks.js and Game.js
+- ✅ Added renderHitRocks method to Game.js to properly display hit effects
+- ✅ Restored proper rock particle generation and rendering
+- ✅ Fixed player rendering during attacks
+- ✅ Enhanced experience orb generation when breaking rocks
+
+### Sound Effects
+- ✅ Added proper sound handling for rock hits
+- ✅ Pre-loaded sounds to reduce latency
+
+### Experience Orb System
+- ✅ Fixed experience orb generation when breaking rocks
+- ✅ Implemented backup mechanism to fall back to old ExperienceOrbManager if needed
+- ✅ Enhanced orb visual effects
+
 ### Current Known Issues (Ordered by Priority)
 1. ✅ Inventory System Error: Fixed InventoryManager.js error by creating the missing Equipment.Inventory class
 2. ✅ Ore Constructor Error: Fixed OreManager.js error by properly accessing Ore constructors from window.Ores
@@ -67,19 +83,39 @@ This document outlines the plan for refactoring the BruteFight game from its cur
 - ✅ Implemented ExperienceOrbManager in systems/experienceOrbs.js to fix the undefined playerManager error
 - ✅ Added null checks for method binding in UI components to prevent "cannot read properties of undefined" errors
 - ✅ Added missing methods to EquipmentUI including createEmptySlotIcon, createQuickbar, updateSlot, and makeDraggable
-- Fixed namespace conflict between `window.Ores` (entity constructors) and `window.OresData` (data/config)
-- Updated `OreManager` to detect both namespaces for better resilience
-- Fixed constructor function signatures in `Ore.js` to match expected parameters
-- Added missing methods to `EquipmentUI` including:
+- ✅ Fixed namespace conflict between `window.Ores` (entity constructors) and `window.OresData` (data/config)
+- ✅ Updated `OreManager` to detect both namespaces for better resilience
+- ✅ Fixed constructor function signatures in `Ore.js` to match expected parameters
+- ✅ Added missing methods to `EquipmentUI` including:
   - `createEmptySlotIcon`
   - `getSlotEmoji` 
   - `handleSlotClick`
   - `createQuickbar`
   - `createQuickSlotElement`
   - And other supporting UI methods
-- Improved error handling throughout the codebase
-- Enhanced `OreManager` initialization with better error handling
-- Added robust constructor in `ExperienceOrb.js`
+- ✅ Improved error handling throughout the codebase
+- ✅ Enhanced `OreManager` initialization with better error handling
+- ✅ Added robust constructor in `ExperienceOrb.js`
+- ✅ Added player experience bar UI at the top of the game window showing:
+  - Current level
+  - Progress to next level
+  - Required experience for level up
+  - Total experience earned
+- ✅ Enhanced experience gain system with level-up animations and sounds
+- ✅ Integrated experience gain with mining and combat activities
+- ✅ Implemented a global experience function for consistent experience tracking
+- ✅ Fixed rock hit and breaking system:
+  - Added visual health bars for rocks showing damage progress
+  - Enhanced hit effects with glows and cracks
+  - Proper experience orb generation when rocks are broken
+  - Fixed rock health tracking and damage system
+- ✅ Improved experience orb system:
+  - Fixed rendering of experience orbs
+  - Implemented proper magnetization of orbs toward player within 50 pixel radius
+  - Improved orb collection logic and visual effects
+  - Experience now only added after collection animation completes
+  - Orbs come in different sizes based on experience amount
+  - Added proper burst mechanics when rocks are broken
 
 ## Additional Recent Fixes
 

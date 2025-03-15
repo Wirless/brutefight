@@ -210,14 +210,25 @@ class ExperienceOrb {
         this.isCollected = true;
         this.collectTime = Date.now();
         
-        // Add experience to player
-        if (player.addExperience) {
-            const didLevelUp = player.addExperience(this.value);
-            
-            // Play sound if available
+        // Don't directly add experience to player anymore
+        // Experience will be added by ExperienceOrbManager on full collection
+        
+        // Play sound if available
+        try {
             if (window.game && window.game.assetLoader) {
-                window.game.assetLoader.playSound(didLevelUp ? 'levelUp' : 'expPickup', 0.3);
+                const isLargeAmount = this.value >= 10;
+                window.game.assetLoader.playSound(isLargeAmount ? 'levelUp' : 'expPickup', 0.3);
+            } else if (window.audioContext) {
+                // Try to play sound directly if assetLoader is not available
+                const isLargeAmount = this.value >= 10;
+                const soundName = isLargeAmount ? 'sounds/levelup.mp3' : 'sounds/collect.mp3';
+                const sound = window.soundsCache && window.soundsCache[soundName] ? 
+                    window.soundsCache[soundName].cloneNode() : new Audio(soundName);
+                sound.volume = 0.3;
+                sound.play().catch(err => console.log('Sound play failed:', err));
             }
+        } catch (error) {
+            console.error("Error playing sound:", error);
         }
     }
     

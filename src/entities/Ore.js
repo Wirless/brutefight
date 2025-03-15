@@ -419,6 +419,47 @@ class Ore {
     }
     
     /**
+     * Hit the ore with a tool or weapon
+     * @param {number} damage - Amount of damage to deal
+     * @param {Object} source - Source of the damage (optional)
+     * @returns {boolean} - Whether the ore was destroyed
+     */
+    hit(damage, source) {
+        // If already broken, can't be hit
+        if (this.broken) return false;
+        
+        console.log(`Ore hit! Type: ${this.type}, Health: ${this.health}/${this.maxHealth}, Damage: ${damage}`);
+        
+        // Apply damage to the ore
+        const destroyed = this.takeDamage(damage, source);
+        
+        // Trigger any additional effects (can be overridden by subclasses)
+        this.onHit(damage, source);
+        
+        return destroyed;
+    }
+    
+    /**
+     * Handle additional effects when hit (can be overridden by subclasses)
+     * @param {number} damage - Amount of damage
+     * @param {Object} source - Source of the damage
+     */
+    onHit(damage, source) {
+        // Base implementation does nothing
+    }
+    
+    /**
+     * Get drops when the ore is broken
+     * @returns {Object} - Object containing dropped items and experience
+     */
+    getDrops() {
+        return {
+            items: [],
+            experience: this.expValue
+        };
+    }
+    
+    /**
      * Take damage from a source
      * @param {number} damage - Amount of damage
      * @param {Object} source - Source of the damage
