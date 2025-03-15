@@ -35,6 +35,12 @@ class ChatManager {
         
         // Set initial active tab
         this.setActiveTab('all');
+        
+        // Add welcome message
+        this.addMessage({
+            type: 'system',
+            message: 'Welcome to the game! Type here to chat with other players.'
+        });
     }
     
     /**
@@ -47,6 +53,9 @@ class ChatManager {
             this.game.isChatFocused = true;
             this.chatInput.style.outline = '2px solid rgb(255, 100, 100)';
             this.game.updateDebugInfo();
+            
+            // Disable keyboard movement directly
+            this.game.disableMovementControls();
         });
         
         // Chat input blur
@@ -55,6 +64,9 @@ class ChatManager {
             this.game.isChatFocused = false;
             this.chatInput.style.outline = '2px solid rgb(0, 233, 150)';
             this.game.updateDebugInfo();
+            
+            // Re-enable keyboard movement
+            this.game.enableMovementControls();
         });
         
         // Chat input keypress
@@ -65,7 +77,17 @@ class ChatManager {
                 document.activeElement.blur();
                 this.isChatFocused = false;
                 this.game.isChatFocused = false;
+                
+                // Re-enable movement
+                this.game.enableMovementControls();
+                this.game.canvas.focus();
             }
+        });
+        
+        // Chat input keydown (to prevent game actions)
+        this.chatInput.addEventListener('keydown', (e) => {
+            // Prevent propagation of all key events to prevent game hotkeys
+            e.stopPropagation();
         });
         
         // Send button click
@@ -76,6 +98,7 @@ class ChatManager {
             this.isChatFocused = false;
             this.game.isChatFocused = false;
             // Re-enable movement
+            this.game.enableMovementControls();
             this.game.canvas.focus();
         });
         

@@ -53,6 +53,7 @@ class Game {
         this.mouseX = 0;
         this.mouseY = 0;
         this.isChatFocused = false;
+        this.controlsEnabled = true;
 
         // Initialize the auth system
         this.auth = {
@@ -82,11 +83,27 @@ class Game {
      * Initialize global objects needed for various systems
      */
     initGlobalObjects() {
-        // Rock hit effect globals
-        if (!window.hitRocks) window.hitRocks = new Set();
-        if (!window.rockHitTimes) window.rockHitTimes = new Map();
-        if (!window.rockParticles) window.rockParticles = [];
-        if (!window.rockHitDuration) window.rockHitDuration = 500; // ms
+        // Initialize global variables for rock hit effects
+        window.hitRocks = window.hitRocks || new Set();
+        window.rockHitTimes = window.rockHitTimes || new Map();
+        window.rockHitDuration = window.rockHitDuration || 500; // How long rocks show hit effect (ms)
+        window.rockParticles = window.rockParticles || [];
+
+        // Initialize sounds if Web Audio API is available
+        try {
+            window.audioEnabled = true;
+            
+            // Create audio context if not already created
+            if (!window.audioContext) {
+                window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            // Preload common sound effects
+            this.preloadSounds();
+        } catch (e) {
+            console.error("Audio API not available:", e);
+            window.audioEnabled = false;
+        }
     }
 
     /**
@@ -106,6 +123,9 @@ class Game {
         
         // Initialize global objects (ensure they exist)
         this.initGlobalObjects();
+        
+        // Initialize the world
+        this.initWorld();
 
         return this;
     }
@@ -226,7 +246,7 @@ class Game {
     }
 
     /**
-     * Initialize all game systems after successful login
+     * Start the game
      */
     startGame() {
         // Initialize managers
@@ -298,13 +318,19 @@ class Game {
             
             // Initialize equipment system using imported modules
             try {
-                this.equipmentManager = new EquipmentManager(this);
-                this.equipmentUI = new EquipmentUI(this.equipmentManager);
-                this.equipmentManager.setUI(this.equipmentUI);
+                // Only initialize once if not already done
+                if (!this.equipmentManager) {
+                    this.equipmentManager = new EquipmentManager(this);
+                    this.equipmentUI = new EquipmentUI(this.equipmentManager);
+                    this.equipmentManager.setUI(this.equipmentUI);
+                    
+                    // No need to auto-open equipment UI on start
+                    // this.equipmentUI.show();
+                }
             } catch (error) {
                 console.error("Error initializing equipment system:", error);
                 // Fallback to window objects if available
-                if (window.EquipmentManager && window.EquipmentUI) {
+                if (!this.equipmentManager && window.EquipmentManager && window.EquipmentUI) {
                     this.equipmentManager = new window.EquipmentManager(this);
                     this.equipmentUI = new window.EquipmentUI(this.equipmentManager);
                     this.equipmentManager.setUI(this.equipmentUI);
@@ -312,9 +338,6 @@ class Game {
                     console.error("EquipmentManager or EquipmentUI not found");
                 }
             }
-            
-            // Initialize leaderboard
-            this.leaderboardUI = new LeaderboardUI(this);
             
             // Make managers globally available if needed
             if (this.equipmentManager) window.equipmentManager = this.equipmentManager;
@@ -536,6 +559,23 @@ class Game {
     }
 
     /**
+     * Enable movement controls
+     */
+    enableMovementControls() {
+        this.controlsEnabled = true;
+    }
+
+    /**
+     * Disable movement controls
+     */
+    disableMovementControls() {
+        this.controlsEnabled = false;
+        // Reset key states
+        this.keys = { w: false, a: false, s: false, d: false };
+        this.updateVelocity();
+    }
+
+    /**
      * Handle keydown event
      * @param {KeyboardEvent} e - Keyboard event
      */
@@ -543,7 +583,7 @@ class Game {
         const key = e.key.toLowerCase();
         
         // Only process input if chat is not focused
-        if (this.isChatFocused) return;
+        if (this.isChatFocused || !this.controlsEnabled) return;
         
         // Check if it's a movement key
         if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
@@ -586,10 +626,16 @@ class Game {
             this.canvas.focus();
         }
         
-        // Toggle inventory panel with 'I' key
+        // Handle toggle inventory panel with 'I' key
         if (key === 'i') {
-            if (window.playerInventoryUI) {
+            if (this.inventoryManager && this.inventoryManager.ui) {
+                this.inventoryManager.ui.toggle();
+                console.log("Toggling inventory UI");
+            } else if (window.playerInventoryUI) {
                 window.playerInventoryUI.toggle();
+                console.log("Toggling global playerInventoryUI");
+            } else {
+                console.error("No inventory UI found to toggle");
             }
         }
         
@@ -612,6 +658,9 @@ class Game {
      */
     handleKeyUp(e) {
         const key = e.key.toLowerCase();
+        
+        // If controls are disabled, don't respond to key up events
+        if (!this.controlsEnabled) return;
         
         // Check if it's a movement key
         if (key === 'w' || key === 'a' || key === 's' || key === 'd') {
@@ -917,7 +966,7 @@ class Game {
         }
         
         // Update hit rocks visual effect
-        this.updateHitRocksEffect();
+        this.updateHitRocksEffect(deltaTime);
         
         // Update rock particles
         this.updateRockParticles();
@@ -926,13 +975,52 @@ class Game {
     /**
      * Update hit rocks visual effect
      */
-    updateHitRocksEffect() {
-        const now = Date.now();
-        for (const [oreIndex, hitTime] of window.rockHitTimes.entries()) {
-            const timeSinceHit = now - hitTime;
-            if (timeSinceHit >= window.rockHitDuration) {
-                window.hitRocks.delete(oreIndex);
-                window.rockHitTimes.delete(oreIndex);
+    updateHitRocksEffect(deltaTime) {
+        // Make sure hitRocks is initialized
+        if (!window.hitRocks) {
+            window.hitRocks = new Set();
+            window.rockHitTimes = new Map();
+            window.rockHitDuration = 500; // ms
+            return;
+        }
+        
+        const currentTime = Date.now();
+        
+        // Check each hit rock
+        for (const rock of window.hitRocks) {
+            // If the rock doesn't have a hit time or is no longer valid, remove it
+            if (!window.rockHitTimes.has(rock) || !rock) {
+                window.hitRocks.delete(rock);
+                continue;
+            }
+            
+            // Get hit time and check if effect duration has elapsed
+            const hitTime = window.rockHitTimes.get(rock);
+            if (currentTime - hitTime > window.rockHitDuration) {
+                window.hitRocks.delete(rock);
+                window.rockHitTimes.delete(rock);
+            }
+        }
+        
+        // Update particles
+        if (window.rockParticles && window.rockParticles.length > 0) {
+            for (let i = window.rockParticles.length - 1; i >= 0; i--) {
+                const particle = window.rockParticles[i];
+                
+                // Update particle position
+                particle.x += particle.vx * deltaTime;
+                particle.y += particle.vy * deltaTime;
+                
+                // Apply gravity
+                particle.vy += 0.002 * deltaTime;
+                
+                // Reduce lifespan
+                particle.life -= deltaTime;
+                
+                // Remove dead particles
+                if (particle.life <= 0) {
+                    window.rockParticles.splice(i, 1);
+                }
             }
         }
     }
@@ -966,8 +1054,8 @@ class Game {
         // Clear the canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Draw floor
-        this.renderFloor();
+        // Draw floor/ground
+        this.renderGround();
         
         // Draw ores
         this.oreManager.drawOres(this.ctx, this.cameraX, this.cameraY);
@@ -1009,7 +1097,7 @@ class Game {
     /**
      * Render the floor/ground
      */
-    renderFloor() {
+    renderGround() {
         // Base implementation - would be moved to Renderer.js
         // ... floor rendering code ...
     }
@@ -1061,6 +1149,141 @@ class Game {
         if (this.currentAttack) {
             this.currentAttack.draw(this.cameraX, this.cameraY);
         }
+    }
+
+    // Method to preload common sound effects
+    preloadSounds() {
+        // Only preload if audio is enabled
+        if (!window.audioEnabled) return;
+        
+        // Sound paths
+        const soundPaths = [
+            'sounds/hit.mp3',
+            'sounds/hit2.mp3',
+            'sounds/collect.mp3',
+            'sounds/levelup.mp3'
+        ];
+        
+        // Create a sounds cache if it doesn't exist
+        window.soundsCache = window.soundsCache || {};
+        
+        // Preload each sound
+        soundPaths.forEach(path => {
+            try {
+                const audio = new Audio(path);
+                audio.load(); // Start loading
+                window.soundsCache[path] = audio;
+            } catch (e) {
+                console.error(`Failed to preload sound: ${path}`, e);
+            }
+        });
+    }
+
+    // Update renderGround method to include grid and grass-like colors
+    renderGround() {
+        const ctx = this.ctx;
+        const cameraX = this.cameraX;
+        const cameraY = this.cameraY;
+        
+        // Calculate visible tiles based on camera position
+        const startTileX = Math.floor(cameraX / this.groundTileSize);
+        const startTileY = Math.floor(cameraY / this.groundTileSize);
+        const endTileX = startTileX + Math.ceil(this.canvas.width / this.groundTileSize) + 1;
+        const endTileY = startTileY + Math.ceil(this.canvas.height / this.groundTileSize) + 1;
+        
+        // Fill background with base green color
+        ctx.fillStyle = '#3a5e3a';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // For each visible tile
+        for (let tileY = startTileY; tileY < endTileY; tileY++) {
+            for (let tileX = startTileX; tileX < endTileX; tileX++) {
+                // Get screen coordinates for this tile
+                const screenX = tileX * this.groundTileSize - Math.floor(cameraX);
+                const screenY = tileY * this.groundTileSize - Math.floor(cameraY);
+                
+                // Use a deterministic but seemingly random color based on position
+                const colorIndex = Math.abs((tileX * 31 + tileY * 17) % this.groundColors.length);
+                const tileColor = this.groundColors[colorIndex];
+                
+                // Draw the grass tile
+                ctx.fillStyle = tileColor;
+                ctx.fillRect(screenX, screenY, this.groundTileSize, this.groundTileSize);
+                
+                // Draw the grid lines
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(screenX, screenY, this.groundTileSize, this.groundTileSize);
+                
+                // Add some random grass detail (dots)
+                const grassDetailCount = (tileX * tileY) % 5 + 2; // 2-6 details per tile
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+                
+                for (let i = 0; i < grassDetailCount; i++) {
+                    // Use deterministic positions based on tile coordinates
+                    const detailX = screenX + ((tileX * 31 + i * 7) % this.groundTileSize);
+                    const detailY = screenY + ((tileY * 17 + i * 13) % this.groundTileSize);
+                    const detailSize = (((tileX + tileY) * i) % 3) + 1; // 1-3 pixel size
+                    
+                    ctx.beginPath();
+                    ctx.arc(detailX, detailY, detailSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+    }
+
+    initWorld() {
+        // Define a simple default World class if worldClass isn't defined
+        if (!this.worldClass) {
+            // Simple default world class
+            class DefaultWorld {
+                constructor(width, height) {
+                    this.width = width;
+                    this.height = height;
+                    this.chunks = new Map();
+                    console.log("Created default world:", width, height);
+                }
+                
+                getChunk(x, y) {
+                    const key = `${x},${y}`;
+                    if (!this.chunks.has(key)) {
+                        this.chunks.set(key, {
+                            x, y,
+                            tiles: []
+                        });
+                    }
+                    return this.chunks.get(key);
+                }
+            }
+            
+            this.worldClass = DefaultWorld;
+            console.log("Using default world class");
+        }
+
+        // Initialize the world objects
+        this.world = new this.worldClass(this.canvas.width, this.canvas.height);
+        
+        // Initialize WorldGenerator if defined, otherwise use dummy function
+        if (window.WorldGenerator) {
+            this.worldGen = new WorldGenerator(this.world);
+            this.worldGen.generateInitialChunks();
+        } else {
+            console.warn("WorldGenerator not found, using default");
+            this.worldGen = {
+                generateInitialChunks: () => console.log("Default world generator - no chunks created")
+            };
+        }
+
+        // Setup ground rendering properties
+        this.groundTileSize = this.TILE_SIZE;
+        this.groundColors = [
+            '#7CFC00', // LawnGreen
+            '#32CD32', // LimeGreen
+            '#228B22', // ForestGreen
+            '#006400', // DarkGreen
+            '#556B2F'  // DarkOliveGreen
+        ];
     }
 }
 

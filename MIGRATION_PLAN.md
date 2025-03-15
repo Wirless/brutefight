@@ -67,6 +67,43 @@ This document outlines the plan for refactoring the BruteFight game from its cur
 - ✅ Implemented ExperienceOrbManager in systems/experienceOrbs.js to fix the undefined playerManager error
 - ✅ Added null checks for method binding in UI components to prevent "cannot read properties of undefined" errors
 - ✅ Added missing methods to EquipmentUI including createEmptySlotIcon, createQuickbar, updateSlot, and makeDraggable
+- Fixed namespace conflict between `window.Ores` (entity constructors) and `window.OresData` (data/config)
+- Updated `OreManager` to detect both namespaces for better resilience
+- Fixed constructor function signatures in `Ore.js` to match expected parameters
+- Added missing methods to `EquipmentUI` including:
+  - `createEmptySlotIcon`
+  - `getSlotEmoji` 
+  - `handleSlotClick`
+  - `createQuickbar`
+  - `createQuickSlotElement`
+  - And other supporting UI methods
+- Improved error handling throughout the codebase
+- Enhanced `OreManager` initialization with better error handling
+- Added robust constructor in `ExperienceOrb.js`
+
+## Additional Recent Fixes
+
+- Fixed chat input system to properly block game hotkeys while typing
+  - Added stopPropagation to prevent key events from triggering game actions
+  - Added proper control enable/disable methods to Game class
+  - Fixed focus handling when clicking send button or pressing Enter
+
+- Fixed equipment system initialization
+  - Prevented equipment UI from opening twice on game start
+  - Added checks to avoid duplicate initialization
+
+- Fixed inventory system toggle
+  - Enhanced 'I' key handling to properly toggle inventory UI
+  - Added fallback options and better error logging
+
+- Fixed ground rendering system
+  - Ensured renderGround method is called instead of renderFloor
+  - Fixed camera position variables in ground rendering code
+  - Added proper world initialization with ground colors
+
+- Fixed interaction between UI systems
+  - Movement controls now properly disabled when chat is focused
+  - Key handlers now check for control state before processing input
 
 ## Migration Steps
 1. ✅ Extract core logic into separate components
@@ -128,3 +165,43 @@ This document outlines the plan for refactoring the BruteFight game from its cur
 - Browser compatibility concerns
 - Performance impact of modular architecture
 - Potential race conditions during component initialization 
+
+## New Improvements
+
+- Enhanced attack system in `attacks.js`:
+  - Implemented better weapon swing animations
+  - Added sound effects for different attack types
+  - Added visual effects like impact animations and particles
+  - Improved hit detection with better angle calculations
+  - Experience gain from mining activities
+  - Integration with the skills system
+- Improved ground rendering:
+  - Added grid lines for better visual reference
+  - Implemented grass-like random color filling for tiles
+  - Added detail elements to make the ground more visually interesting
+- Added sound system:
+  - Preloading of sound effects
+  - Audio API detection and fallbacks
+  - Volume and playback rate controls for more realistic sounds
+
+## Known Issues
+
+- Some weapons may not display proper animations in certain angles
+- Experience orbs sometimes overlap and are difficult to collect
+- Chat system sometimes displays duplicate messages
+- Combat against mobs still needs implementation
+- Inventory drag and drop functionality needs improvement
+- Player movement can be jumpy at higher speeds
+
+## Next Steps
+
+1. ✅ Fix the chat input system to prevent hotkey interference
+2. ✅ Fix the ground rendering to show grid and grass colors
+3. ✅ Fix equipment panel opening twice on game start
+4. ✅ Fix inventory system to make it openable with I key
+5. Implement proper combat system for mobs
+6. Add more inventory management features
+7. Improve player animation system
+8. Optimize rendering for large worlds
+9. Add more visual effects for skills and abilities
+10. Implement proper camera transitions between game states 
