@@ -62,10 +62,21 @@ class EquipmentUI {
      */
     init() {
         try {
-            this.createUI();
-            this.showQuickbar();
-            this.showEquipmentPanel();
-            this.restoreWindowPosition();
+            if (typeof this.createUI === 'function') {
+                this.createUI();
+            }
+            
+            if (typeof this.showQuickbar === 'function') {
+                this.showQuickbar();
+            }
+            
+            if (typeof this.showEquipmentPanel === 'function') {
+                this.showEquipmentPanel();
+            }
+            
+            if (typeof this.restoreWindowPosition === 'function') {
+                this.restoreWindowPosition();
+            }
         } catch (err) {
             console.error('Error creating equipment UI:', err);
         }
@@ -560,6 +571,558 @@ class EquipmentUI {
         } catch (error) {
             console.error('Error restoring equipment window position:', error);
         }
+    }
+    
+    /**
+     * Create an icon for an empty slot
+     * @param {string} slotName - Name of the slot
+     * @returns {HTMLElement} The icon element
+     */
+    createEmptySlotIcon(slotName) {
+        const emptyIcon = document.createElement('span');
+        emptyIcon.className = 'slot-icon empty';
+        
+        // Get appropriate emoji for this slot type
+        const emoji = this.getSlotEmoji(slotName);
+        emptyIcon.textContent = emoji;
+        
+        Object.assign(emptyIcon.style, {
+            fontSize: '24px',
+            opacity: '0.5',
+            pointerEvents: 'none'
+        });
+        
+        return emptyIcon;
+    }
+    
+    /**
+     * Get the appropriate emoji for a slot type
+     * @param {string} slotName - Name of the slot
+     * @returns {string} The emoji
+     */
+    getSlotEmoji(slotName) {
+        const emojiMap = {
+            [this.EQUIPMENT_SLOTS.HEAD]: '👑',
+            [this.EQUIPMENT_SLOTS.CHEST]: '👕',
+            [this.EQUIPMENT_SLOTS.LEGS]: '👖',
+            [this.EQUIPMENT_SLOTS.FEET]: '👢',
+            [this.EQUIPMENT_SLOTS.NECKLACE]: '📿',
+            [this.EQUIPMENT_SLOTS.RING_LEFT]: '💍',
+            [this.EQUIPMENT_SLOTS.RING_RIGHT]: '💍',
+            [this.EQUIPMENT_SLOTS.LEFT_HAND]: '🛡️',
+            [this.EQUIPMENT_SLOTS.RIGHT_HAND]: '⚔️',
+            [this.EQUIPMENT_SLOTS.BACKPACK]: '🎒'
+        };
+        
+        // For quick slots use numbers
+        if (Object.values(this.QUICK_SLOTS).includes(slotName)) {
+            return '#';
+        }
+        
+        return emojiMap[slotName] || '❓';
+    }
+    
+    /**
+     * Handle slot click
+     * @param {string} slotName - Name of the slot
+     * @param {boolean} isQuickSlot - Whether this is a quick slot
+     */
+    handleSlotClick(slotName, isQuickSlot = false) {
+        // Skip if slot doesn't exist in equipment manager
+        if (!this.equipmentManager) {
+            console.error(`Cannot handle click for slot ${slotName}: equipmentManager not available`);
+            return;
+        }
+        
+        try {
+            // Get the item in this slot if any
+            const equippedItem = isQuickSlot 
+                ? this.equipmentManager.getQuickSlotItem(slotName)
+                : this.equipmentManager.getItemInSlot(slotName);
+                
+            // If there's a currently dragged item from inventory, try to equip it
+            if (window.draggedItem && window.draggedItemSource === 'inventory') {
+                this.equipmentManager.equipFromInventory(window.draggedItemSlot);
+                return;
+            }
+            
+            // If there's an item in the slot already, unequip it
+            if (equippedItem) {
+                if (isQuickSlot) {
+                    this.equipmentManager.unassignQuickSlot(slotName);
+                } else {
+                    this.equipmentManager.unequipItem(slotName);
+                }
+            }
+            
+            // Update the UI
+            this.updateSlot(slotName, isQuickSlot);
+        } catch (error) {
+            console.error(`Error handling click for slot ${slotName}:`, error);
+        }
+    }
+    
+    /**
+     * Create the quickbar panel
+     */
+    createQuickbar() {
+        if (!this.options.showQuickbar) return;
+        
+        // Create container
+        this.quickbarPanel = document.createElement('div');
+        this.quickbarPanel.id = 'quickbarPanel';
+        this.quickbarPanel.className = 'game-panel';
+        
+        // Style the quickbar
+        Object.assign(this.quickbarPanel.style, {
+            position: 'fixed',
+            bottom: '10px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            border: '2px solid rgb(0, 233, 150)',
+            borderRadius: '5px',
+            padding: '10px',
+            display: 'flex',
+            gap: '5px',
+            zIndex: '100'
+        });
+        
+        // Create slots
+        const keys = Object.keys(this.QUICK_SLOTS);
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
+            const slotId = this.QUICK_SLOTS[key];
+            
+            const slotElement = this.createQuickSlotElement(slotId, key);
+            this.quickbarPanel.appendChild(slotElement);
+            this.quickSlotElements[slotId] = slotElement;
+        }
+        
+        // Add to document
+        document.body.appendChild(this.quickbarPanel);
+    }
+    
+    /**
+     * Create a quick slot element
+     * @param {string} slotName - Name of the slot
+     * @param {string} key - Keyboard key for this slot
+     * @returns {HTMLElement} The quick slot element
+     */
+    createQuickSlotElement(slotName, key) {
+        const slotElement = document.createElement('div');
+        slotElement.className = 'quick-slot';
+        slotElement.dataset.slot = slotName;
+        slotElement.dataset.key = key;
+        
+        // Style the slot
+        Object.assign(slotElement.style, {
+            width: '50px',
+            height: '50px',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            border: '2px solid rgb(0, 233, 150)',
+            borderRadius: '5px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+        });
+        
+        // Add key indicator
+        const keyIndicator = document.createElement('div');
+        keyIndicator.className = 'key-indicator';
+        keyIndicator.textContent = key;
+        Object.assign(keyIndicator.style, {
+            position: 'absolute',
+            top: '2px',
+            right: '2px',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            color: 'rgb(0, 233, 150)'
+        });
+        slotElement.appendChild(keyIndicator);
+        
+        // Add empty slot icon
+        const emptyIcon = this.createEmptySlotIcon(slotName);
+        slotElement.appendChild(emptyIcon);
+        
+        // Add hover effects
+        this.addSlotHoverEffects(slotElement);
+        
+        // Add click handler
+        slotElement.addEventListener('click', () => {
+            this.handleSlotClick(slotName, true);
+        });
+        
+        return slotElement;
+    }
+    
+    /**
+     * Update a specific slot in the UI
+     * @param {string} slotName - The slot to update
+     * @param {boolean} isQuickSlot - Whether this is a quick slot
+     */
+    updateSlot(slotName, isQuickSlot = false) {
+        try {
+            const slotElement = isQuickSlot 
+                ? this.quickSlotElements[slotName] 
+                : this.slotElements[slotName];
+                
+            if (!slotElement) {
+                console.warn(`Slot element not found for ${slotName}`);
+                return;
+            }
+            
+            // Clear the slot
+            while (slotElement.firstChild) {
+                slotElement.removeChild(slotElement.firstChild);
+            }
+            
+            // Get the item in this slot
+            const item = isQuickSlot 
+                ? this.equipmentManager.getQuickSlotItem(slotName)
+                : this.equipmentManager.getItemInSlot(slotName);
+            
+            if (item) {
+                // Create item display
+                const itemDisplay = document.createElement('div');
+                itemDisplay.className = 'item-display';
+                Object.assign(itemDisplay.style, {
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: item.getRarityColor ? item.getRarityColor() : 'white'
+                });
+                
+                // Item icon
+                const itemIcon = document.createElement('div');
+                itemIcon.className = 'item-icon';
+                itemIcon.textContent = item.icon || '📦';
+                itemIcon.style.fontSize = '24px';
+                itemDisplay.appendChild(itemIcon);
+                
+                // Add to slot
+                slotElement.appendChild(itemDisplay);
+                
+                // Add tooltip on hover
+                this.setupItemTooltip(slotElement, item);
+            } else {
+                // Add empty slot icon
+                const emptyIcon = this.createEmptySlotIcon(slotName);
+                slotElement.appendChild(emptyIcon);
+                
+                // If it's a quick slot, add key indicator
+                if (isQuickSlot) {
+                    const keyIndicator = document.createElement('div');
+                    keyIndicator.className = 'key-indicator';
+                    keyIndicator.textContent = Object.keys(this.QUICK_SLOTS).find(
+                        key => this.QUICK_SLOTS[key] === slotName
+                    );
+                    Object.assign(keyIndicator.style, {
+                        position: 'absolute',
+                        top: '2px',
+                        right: '2px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        color: 'rgb(0, 233, 150)'
+                    });
+                    slotElement.appendChild(keyIndicator);
+                }
+            }
+            
+            // Highlight active quick slot
+            if (isQuickSlot && this.equipmentManager.activeQuickSlot === slotName) {
+                slotElement.style.border = '2px solid rgb(255, 215, 0)';
+                slotElement.style.boxShadow = '0 0 10px rgba(255, 215, 0, 0.7)';
+            } else if (isQuickSlot) {
+                slotElement.style.border = '2px solid rgb(0, 233, 150)';
+                slotElement.style.boxShadow = 'none';
+            }
+        } catch (error) {
+            console.error(`Error updating slot ${slotName}:`, error);
+        }
+    }
+    
+    /**
+     * Set up tooltip for an item
+     * @param {HTMLElement} element - The element to attach tooltip to
+     * @param {Object} item - The item object
+     */
+    setupItemTooltip(element, item) {
+        let tooltipTimeout;
+        let tooltipElement = null;
+        
+        element.addEventListener('mouseenter', (e) => {
+            tooltipTimeout = setTimeout(() => {
+                // Clear existing tooltips
+                this.clearAllTooltips();
+                
+                // Create tooltip
+                tooltipElement = this.createItemTooltip(item);
+                document.body.appendChild(tooltipElement);
+                
+                // Position tooltip
+                const rect = element.getBoundingClientRect();
+                tooltipElement.style.left = `${rect.right + 10}px`;
+                tooltipElement.style.top = `${rect.top}px`;
+                
+                // Show tooltip with animation
+                tooltipElement.style.opacity = '0';
+                tooltipElement.style.transform = 'translateY(-10px)';
+                setTimeout(() => {
+                    tooltipElement.style.opacity = '1';
+                    tooltipElement.style.transform = 'translateY(0)';
+                }, 10);
+            }, 300);
+        });
+        
+        element.addEventListener('mouseleave', () => {
+            clearTimeout(tooltipTimeout);
+            if (tooltipElement) {
+                tooltipElement.style.opacity = '0';
+                tooltipElement.style.transform = 'translateY(-10px)';
+                setTimeout(() => {
+                    if (tooltipElement && tooltipElement.parentNode) {
+                        tooltipElement.parentNode.removeChild(tooltipElement);
+                    }
+                    tooltipElement = null;
+                }, 300);
+            }
+        });
+    }
+    
+    /**
+     * Create a tooltip for an item
+     * @param {Object} item - The item object
+     * @returns {HTMLElement} The tooltip element
+     */
+    createItemTooltip(item) {
+        const tooltip = document.createElement('div');
+        tooltip.className = 'item-tooltip';
+        
+        Object.assign(tooltip.style, {
+            position: 'fixed',
+            backgroundColor: 'rgba(0, 0, 0, 0.9)',
+            border: `2px solid ${item.getRarityColor ? item.getRarityColor() : 'white'}`,
+            borderRadius: '5px',
+            padding: '10px',
+            zIndex: '1000',
+            color: 'white',
+            width: '200px',
+            pointerEvents: 'none',
+            transition: 'opacity 0.3s ease, transform 0.3s ease'
+        });
+        
+        // Item name
+        const nameElement = document.createElement('div');
+        nameElement.className = 'item-name';
+        nameElement.textContent = item.name || 'Unknown Item';
+        nameElement.style.fontWeight = 'bold';
+        nameElement.style.fontSize = '16px';
+        nameElement.style.marginBottom = '5px';
+        nameElement.style.color = item.getRarityColor ? item.getRarityColor() : 'white';
+        tooltip.appendChild(nameElement);
+        
+        // Item type
+        if (item.type) {
+            const typeElement = document.createElement('div');
+            typeElement.className = 'item-type';
+            typeElement.textContent = item.type;
+            typeElement.style.fontSize = '12px';
+            typeElement.style.color = '#aaa';
+            typeElement.style.marginBottom = '5px';
+            tooltip.appendChild(typeElement);
+        }
+        
+        // Item description
+        if (item.description) {
+            const descElement = document.createElement('div');
+            descElement.className = 'item-description';
+            descElement.textContent = item.description;
+            descElement.style.fontSize = '14px';
+            descElement.style.marginTop = '5px';
+            descElement.style.color = '#ddd';
+            tooltip.appendChild(descElement);
+        }
+        
+        // Item stats
+        if (item.stats) {
+            const statsElement = document.createElement('div');
+            statsElement.className = 'item-stats';
+            statsElement.style.marginTop = '10px';
+            
+            for (const stat in item.stats) {
+                const statElement = document.createElement('div');
+                statElement.textContent = `${stat}: ${item.stats[stat]}`;
+                statElement.style.fontSize = '12px';
+                statElement.style.color = '#8ff';
+                statsElement.appendChild(statElement);
+            }
+            
+            tooltip.appendChild(statsElement);
+        }
+        
+        return tooltip;
+    }
+    
+    /**
+     * Clear all tooltips in the document
+     */
+    clearAllTooltips() {
+        const tooltips = document.querySelectorAll('.item-tooltip');
+        tooltips.forEach(tooltip => {
+            tooltip.parentNode.removeChild(tooltip);
+        });
+    }
+    
+    /**
+     * Create inventory button
+     * @returns {HTMLElement} The inventory button
+     */
+    createInventoryButton() {
+        const button = document.createElement('button');
+        button.id = 'inventoryButton';
+        button.textContent = 'Inventory';
+        
+        Object.assign(button.style, {
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            color: 'rgb(0, 233, 150)',
+            border: '2px solid rgb(0, 233, 150)',
+            borderRadius: '5px',
+            padding: '8px 15px',
+            fontSize: '14px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            marginTop: '10px',
+            alignSelf: 'center'
+        });
+        
+        button.addEventListener('mouseover', () => {
+            button.style.backgroundColor = 'rgba(0, 50, 30, 0.7)';
+            button.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.5)';
+        });
+        
+        button.addEventListener('mouseout', () => {
+            button.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+            button.style.boxShadow = 'none';
+        });
+        
+        button.addEventListener('click', () => {
+            // Toggle inventory
+            if (window.playerInventoryUI && typeof window.playerInventoryUI.toggle === 'function') {
+                window.playerInventoryUI.toggle();
+            }
+        });
+        
+        return button;
+    }
+    
+    /**
+     * Create equipment button
+     * @returns {HTMLElement} The equipment button
+     */
+    createEquipmentButton() {
+        // Skip if already created
+        if (this.equipmentButton) return this.equipmentButton;
+        
+        const button = document.createElement('button');
+        button.id = 'equipmentButton';
+        button.textContent = '👕';
+        
+        Object.assign(button.style, {
+            position: 'fixed',
+            bottom: '70px',
+            right: '10px',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            color: 'rgb(0, 233, 150)',
+            border: '2px solid rgba(0, 233, 150, 0.5)',
+            borderRadius: '5px',
+            padding: '10px',
+            fontSize: '20px',
+            cursor: 'pointer',
+            zIndex: '100',
+            transition: 'all 0.2s ease',
+            boxShadow: '0 0 5px rgba(0, 233, 150, 0.2)'
+        });
+        
+        button.addEventListener('mouseover', () => {
+            button.style.backgroundColor = 'rgba(0, 50, 30, 0.8)';
+            button.style.boxShadow = '0 0 10px rgba(0, 233, 150, 0.5)';
+        });
+        
+        button.addEventListener('mouseout', () => {
+            button.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+            if (!this.isPanelVisible) {
+                button.style.boxShadow = '0 0 5px rgba(0, 233, 150, 0.2)';
+            }
+        });
+        
+        button.addEventListener('click', () => {
+            this.toggleEquipmentPanel();
+        });
+        
+        // Store and add to document
+        this.equipmentButton = button;
+        document.body.appendChild(button);
+        
+        return button;
+    }
+    
+    /**
+     * Make a window draggable
+     * @param {HTMLElement} dragHandle - Element to use as drag handle
+     */
+    makeDraggable(dragHandle) {
+        if (!this.equipmentPanel || !dragHandle) return;
+        
+        let isDragging = false;
+        let offsetX = 0;
+        let offsetY = 0;
+        
+        // Store the original cursor
+        const originalCursor = dragHandle.style.cursor;
+        
+        dragHandle.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            offsetX = e.clientX - this.equipmentPanel.getBoundingClientRect().left;
+            offsetY = e.clientY - this.equipmentPanel.getBoundingClientRect().top;
+            dragHandle.style.cursor = 'grabbing';
+            
+            // Prevent default to avoid text selection during drag
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const x = e.clientX - offsetX;
+            const y = e.clientY - offsetY;
+            
+            // Constrain to window boundaries
+            const maxX = window.innerWidth - this.equipmentPanel.offsetWidth;
+            const maxY = window.innerHeight - this.equipmentPanel.offsetHeight;
+            
+            this.equipmentPanel.style.left = `${Math.min(Math.max(0, x), maxX)}px`;
+            this.equipmentPanel.style.top = `${Math.min(Math.max(0, y), maxY)}px`;
+            this.equipmentPanel.style.right = 'auto';
+            this.equipmentPanel.style.transform = 'none';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                dragHandle.style.cursor = originalCursor;
+                
+                // Save the position
+                this.saveWindowPosition();
+            }
+        });
     }
 }
 

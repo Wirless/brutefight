@@ -216,7 +216,7 @@ export function calculateOrbOpacity(orb) {
     }
     
     return 1;
-} 
+}
 
 // Create an experienceOrbs object that contains all exported classes and functions
 const experienceOrbs = {
@@ -228,8 +228,113 @@ const experienceOrbs = {
     calculateOrbOpacity
 };
 
+/**
+ * ExperienceOrbManager - Manages all experience orbs in the game
+ */
+class ExperienceOrbManager {
+    /**
+     * @param {Game} game - The main game instance
+     */
+    constructor(game) {
+        this.game = game;
+        this.orbs = [];
+        console.log("ExperienceOrbManager initialized");
+    }
+    
+    /**
+     * Create a new experience orb
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     * @param {number} amount - Amount of experience
+     */
+    createOrb(x, y, amount) {
+        const orb = createExperienceOrb(x, y, amount);
+        this.orbs.push(orb);
+        return orb;
+    }
+    
+    /**
+     * Update all orbs
+     * @param {number} playerX - Player X position
+     * @param {number} playerY - Player Y position
+     * @param {number} deltaTime - Time elapsed since last update
+     */
+    update(playerX, playerY, deltaTime) {
+        // Create dummy player object if we don't have playerManager
+        const player = { x: playerX, y: playerY };
+        
+        // Merge nearby orbs
+        this.orbs = mergeExperienceOrbs(this.orbs);
+        
+        // Update all orbs
+        for (let i = this.orbs.length - 1; i >= 0; i--) {
+            const orb = this.orbs[i];
+            const shouldRemove = updateExperienceOrb(orb, player, deltaTime);
+            
+            // Remove if necessary
+            if (shouldRemove) {
+                // If the orb was collected, add XP to player
+                if (orb.collected && !orb.expired && this.game && this.game.myPlayer) {
+                    this.game.myPlayer.experience += orb.amount;
+                }
+                
+                this.orbs.splice(i, 1);
+            }
+        }
+    }
+    
+    /**
+     * Draw all orbs
+     * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {number} cameraX - Camera X position
+     * @param {number} cameraY - Camera Y position
+     */
+    draw(ctx, cameraX, cameraY) {
+        for (const orb of this.orbs) {
+            this.drawOrb(ctx, orb, cameraX, cameraY);
+        }
+    }
+    
+    /**
+     * Draw a single orb
+     * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {Object} orb - Experience orb to draw
+     * @param {number} cameraX - Camera X position
+     * @param {number} cameraY - Camera Y position
+     */
+    drawOrb(ctx, orb, cameraX, cameraY) {
+        const screenX = orb.x - cameraX;
+        const screenY = orb.y - cameraY;
+        
+        // Skip if offscreen
+        if (screenX < -50 || screenY < -50 || 
+            screenX > ctx.canvas.width + 50 || 
+            screenY > ctx.canvas.height + 50) {
+            return;
+        }
+        
+        // Draw glow
+        ctx.globalAlpha = orb.opacity * 0.5;
+        ctx.fillStyle = XP_ORB_CONFIG.glowColor;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, orb.size * orb.scale * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw orb
+        ctx.globalAlpha = orb.opacity;
+        ctx.fillStyle = XP_ORB_CONFIG.baseColor;
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, orb.size * orb.scale, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+}
+
 // Make experienceOrbs available globally for backward compatibility
 window.ExperienceOrbs = experienceOrbs;
+window.ExperienceOrbManager = ExperienceOrbManager;
 
 // Export the experienceOrbs object as default
 export default experienceOrbs;   

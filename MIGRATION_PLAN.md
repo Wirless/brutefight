@@ -51,9 +51,11 @@ This document outlines the plan for refactoring the BruteFight game from its cur
 ### Current Known Issues (Ordered by Priority)
 1. ✅ Inventory System Error: Fixed InventoryManager.js error by creating the missing Equipment.Inventory class
 2. ✅ Ore Constructor Error: Fixed OreManager.js error by properly accessing Ore constructors from window.Ores
-3. ❌ Game Rendering: Game canvas is not rendering properly
-4. ❌ Chat System: Chat functionality is broken
-5. ❌ UI Integration: Various UI components may need reconnection after module restructuring
+3. ✅ Experience Orb Error: Fixed ExperienceOrbManager to properly work with game instance
+4. ✅ Equipment UI Error: Fixed binding issues in EquipmentUI constructor and implemented missing methods 
+5. ❌ Game Rendering: Game canvas is not rendering properly
+6. ❌ Chat System: Chat functionality is broken
+7. ❌ UI Integration: Various UI components may need reconnection after module restructuring
 
 ### Recent Fixes
 - ✅ Created Inventory class in equipment module to fix InventoryManager initialization
@@ -62,6 +64,9 @@ This document outlines the plan for refactoring the BruteFight game from its cur
 - ✅ Enhanced OreManager with fallback mechanisms for ore creation
 - ✅ Updated Ore.js to provide proper constructor functions for OreManager
 - ✅ Added initialization of required global objects (hitRocks, rockHitTimes, rockParticles)
+- ✅ Implemented ExperienceOrbManager in systems/experienceOrbs.js to fix the undefined playerManager error
+- ✅ Added null checks for method binding in UI components to prevent "cannot read properties of undefined" errors
+- ✅ Added missing methods to EquipmentUI including createEmptySlotIcon, createQuickbar, updateSlot, and makeDraggable
 
 ## Migration Steps
 1. ✅ Extract core logic into separate components

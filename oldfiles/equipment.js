@@ -2597,7 +2597,7 @@ class EquipmentUI {
                 itemIcon.className = 'quick-slot-item-icon';
                 itemIcon.style.width = '32px';
                 itemIcon.style.height = '32px';
-                itemIcon.style.backgroundColor = item.color || '#7E57C2';
+                itemIcon.style.backgroundColor = item.color;
                 itemIcon.style.border = `2px solid ${item.getRarityColor()}`;
                 itemIcon.style.borderRadius = '4px';
                 
