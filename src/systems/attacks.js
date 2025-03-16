@@ -223,7 +223,7 @@ function doesHitTree(attackX, attackY, tree) {
  * @param {number} direction - Attack direction in radians
  * @returns {boolean} - True if the ore is hit
  */
-function doesHitRock(attackX, attackY, ore, range, angleWidth, direction) {
+function doesHitRock(attackX, attackY, ore, range, angleWidth, direction, useRectangle = false, rectWidth = 0) {
     // Comprehensive validation - each check is separate for clarity
     if (!ore) return false;  
     if (ore.broken) return false;
@@ -241,6 +241,28 @@ function doesHitRock(attackX, attackY, ore, range, angleWidth, direction) {
     
     // Use circular hitbox for rocks based on ore radius
     const hitRadius = (ore.radius || 20);
+    
+    // Rectangle hit detection for fist
+    if (useRectangle && direction !== undefined && rectWidth > 0) {
+        // Get angle to ore
+        const angleToOre = Math.atan2(dy, dx);
+        
+        // Normalize angle difference to be between -PI and PI
+        let angleDiff = angleToOre - direction;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        
+        // Check if ore is within the rectangle:
+        // 1. Distance should be less than range + hitRadius for length
+        const inRange = distance <= range + hitRadius;
+        
+        // 2. Angular distance should be small enough for width
+        // Convert angular width to a linear width at the distance of the ore
+        const halfAngularWidth = Math.atan2(rectWidth / 2, distance);
+        const inWidth = Math.abs(angleDiff) <= halfAngularWidth;
+        
+        return inRange && inWidth;
+    }
     
     // If we need to check angle (for directional attacks)
     if (direction !== undefined && angleWidth !== undefined) {
@@ -1285,9 +1307,11 @@ class FistAttack extends Attack {
     constructor(player, ctx) {
         super(player, ctx);
         this.maxCooldown = 50; // Extremely low cooldown (50ms) to allow for much faster clicking
-        this.range = 25; // Base range of 25 pixels (was 40)
-        this.baseRange = 25; // Store base range
-        this.arcWidth = 55 * (Math.PI / 180); // 55 degrees in radians
+        this.baseRange = 40; // Base range of 40 pixels
+        this.range = this.baseRange; // Initialize with base range
+        this.baseWidth = 15; // Base width of 15 pixels
+        this.width = this.baseWidth; // Initialize with base width
+        this.arcWidth = 55 * (Math.PI / 180); // 55 degrees in radians (still used for drawing)
         this.hitChecked = false;
         this.lastClickTime = Date.now();
         this.clicksPerSecond = 0;
@@ -1296,6 +1320,10 @@ class FistAttack extends Attack {
         this.hitTargets = new Set(); // Track targets already hit in this attack
         this.comboCount = 0; // Counter for combo attacks
         this.comboTimeout = 1000; // Time window for combos in ms
+        this.useRectangle = true; // Use rectangular hit detection
+        this.showDebug = false; // Don't show debug visuals by default
+        this.useLeftHand = false; // Start with right hand
+        this.skinColor = '#e0ac69'; // Default skin color
         
         // Initialize skills system integration
         if (!this.player.skills) {
@@ -1553,16 +1581,23 @@ class FistAttack extends Attack {
             }
             this.lastClickTime = now;
             
-            // Increase range based on combo (5 pixels per combo hit, max 50 bonus)
-            const rangeBonus = Math.min(50, this.comboCount * 5);
+            // Toggle between left and right hand
+            this.useLeftHand = !this.useLeftHand;
+            
+            // Increase range based on CPS (5 pixels per CPS)
+            const rangeBonus = Math.min(50, this.clicksPerSecond * 5);
             this.range = this.baseRange + rangeBonus;
             
-            // Increase arc width with combo (2 degrees per combo hit, max 45 extra degrees)
+            // Increase width based on CPS (3 pixels per CPS)
+            const widthBonus = Math.min(30, this.clicksPerSecond * 3);
+            this.width = this.baseWidth + widthBonus;
+            
+            // Legacy arc width calculation - keep for drawing purposes
             const maxArcBonus = 45 * (Math.PI / 180);
             const arcBonus = Math.min(maxArcBonus, this.comboCount * (Math.PI / 90));
             this.arcWidth = (55 * (Math.PI / 180)) + arcBonus;
             
-            console.log(`Fist attack with range: ${this.range}px, arc: ${this.arcWidth * (180/Math.PI)}°`);
+            console.log(`Fist attack with length: ${this.range}px, width: ${this.width}px, hand: ${this.useLeftHand ? 'left' : 'right'}`);
             
             // Further reduce cooldown based on rapid clicking
             if (timeBetweenClicks < 300) {
@@ -1586,55 +1621,121 @@ class FistAttack extends Attack {
         const progress = this.getProgress();
         const screenX = this.player.x - Math.floor(cameraX);
         const screenY = this.player.y - Math.floor(cameraY);
-        const radius = this.player.radius;
+        const radius = this.player.radius || 15;
         
-        // Determine fist position based on direction and progress
+        // Determine fist position based on direction and animation progress
         const direction = this.direction;
         
-        // Calculate fist starting and ending positions
-        const startX = screenX;
-        const startY = screenY;
+        // Calculate the attack endpoint
+        const attackDistance = this.range;
+        const endpointX = screenX + Math.cos(direction) * attackDistance;
+        const endpointY = screenY + Math.sin(direction) * attackDistance;
         
-        // End position will be farther out at mid-animation, then retract
-        let punchExtension = 0;
-        if (progress < 0.5) {
-            // Extending punch
-            punchExtension = progress * 2; // 0 to 1
+        // Calculate offsets for left or right hand (perpendicular to attack direction)
+        const perpDirection = direction + Math.PI/2; // 90 degrees offset
+        const handOffset = 10; // How far the hands are from the center of the player
+        
+        // Starting position of the hand (offset to side of player body)
+        let handStartX, handStartY;
+        if (this.useLeftHand) {
+            // Left hand starts on the left side of player
+            handStartX = screenX + Math.cos(perpDirection) * handOffset;
+            handStartY = screenY + Math.sin(perpDirection) * handOffset;
         } else {
-            // Retracting punch
-            punchExtension = 2 - progress * 2; // 1 to 0
+            // Right hand starts on the right side of player
+            handStartX = screenX - Math.cos(perpDirection) * handOffset;
+            handStartY = screenY - Math.sin(perpDirection) * handOffset;
         }
         
-        // Calculate punch distance based on range and extension
-        const punchDistance = radius + (this.range - radius) * punchExtension;
+        // Calculate curved path using quadratic bezier curve
+        // We'll use progress (0-1) to determine how far along the path the fist is
         
-        // Calculate end position based on direction and punch distance
-        const endX = startX + Math.cos(direction) * punchDistance;
-        const endY = startY + Math.sin(direction) * punchDistance;
+        // Control point for the curve (offset from the straight line for the arc)
+        const controlPointDistance = 40; // Higher = bigger arc
+        const controlOffsetDirection = this.useLeftHand ? 
+            direction - Math.PI/4 : // Left hand curves one way
+            direction + Math.PI/4;  // Right hand curves the other way
         
-        // Draw the arm/fist line
-        ctx.strokeStyle = '#e67e22'; // Brown arm color
-        ctx.lineWidth = 8;
+        const controlX = screenX + Math.cos(controlOffsetDirection) * controlPointDistance;
+        const controlY = screenY + Math.sin(controlOffsetDirection) * controlPointDistance;
+        
+        // Calculate current position using quadratic bezier formula
+        // P = (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+        // where P₀=start, P₁=control, P₂=end, and t is progress (0-1)
+        const t = progress;
+        const tSq = t * t;
+        const oneMinusT = 1 - t;
+        const oneMinusTSq = oneMinusT * oneMinusT;
+        
+        const currentX = oneMinusTSq * handStartX + 2 * oneMinusT * t * controlX + tSq * endpointX;
+        const currentY = oneMinusTSq * handStartY + 2 * oneMinusT * t * controlY + tSq * endpointY;
+        
+        // Calculate size of fist (bigger at the end of punch, smaller at start and return)
+        let fistSize = 10; // Base size
+        
+        // Make the fist grow as it extends and shrink as it retracts
+        if (progress < 0.5) {
+            // Growing phase (0 to 0.5)
+            fistSize = 8 + progress * 8; // 8 to 12
+        } else {
+            // Shrinking phase (0.5 to 1)
+            fistSize = 12 - (progress - 0.5) * 8; // 12 to 8
+        }
+        
+        // Draw the arm/fist line (thinner line connecting player to fist)
+        ctx.strokeStyle = this.skinColor;
+        ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
+        ctx.moveTo(handStartX, handStartY);
+        
+        // Draw a curved line using the same quadratic bezier curve
+        ctx.quadraticCurveTo(controlX, controlY, currentX, currentY);
         ctx.stroke();
         
-        // Draw the fist
-        ctx.fillStyle = '#e67e22';
+        // Draw the fist (skin-colored circle)
+        ctx.fillStyle = this.skinColor;
         ctx.beginPath();
-        ctx.arc(endX, endY, radius / 2, 0, Math.PI * 2);
+        ctx.arc(currentX, currentY, fistSize, 0, Math.PI * 2);
         ctx.fill();
         
-        // Draw the hit arc (for debugging)
-        if (window.game && window.game.debug) {
-            // Draw the arc that represents the hit detection area
+        // Draw knuckle details
+        const knuckleColor = '#d69c66'; // Slightly darker than skin
+        const knuckleSizeRatio = 0.3; // Size ratio of knuckles to fist
+        const knuckleOffset = fistSize * 0.5; // Offset from center
+        
+        // Direction from center of fist to target
+        const knuckleDirection = Math.atan2(endpointY - currentY, endpointX - currentX);
+        
+        // Draw three knuckles
+        for (let i = -1; i <= 1; i++) {
+            // Spread knuckles perpendicular to punch direction
+            const spreadAngle = knuckleDirection + (i * Math.PI/8);
+            
+            const knuckleX = currentX + Math.cos(spreadAngle) * knuckleOffset;
+            const knuckleY = currentY + Math.sin(spreadAngle) * knuckleOffset;
+            
+            ctx.fillStyle = knuckleColor;
             ctx.beginPath();
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+            ctx.arc(knuckleX, knuckleY, fistSize * knuckleSizeRatio, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Only show debug visualization if enabled
+        if (this.showDebug && window.game && window.game.debug) {
+            // Draw the rectangle that represents the hit detection area
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
             ctx.lineWidth = 1;
-            ctx.arc(startX, startY, this.range, direction - this.arcWidth/2, direction + this.arcWidth/2);
-            ctx.lineTo(startX, startY);
-            ctx.stroke();
+            
+            // Draw rectangle hitbox
+            ctx.save();
+            ctx.translate(screenX, screenY);
+            ctx.rotate(direction);
+            
+            // Draw the rectangle
+            const halfWidth = this.width / 2;
+            const fullLength = this.range + radius;
+            ctx.strokeRect(0, -halfWidth, fullLength, this.width);
+            ctx.restore();
         }
         
         // Check for hits at the right moment in the animation
@@ -1681,8 +1782,9 @@ class FistAttack extends Attack {
             if (!ore || ore.broken || (ore.visible === false) || this.hitTargets.has(ore.id)) continue;
             
             // Use the helper function to check if the punch hits the ore
-            if (doesHitRock(punchX, punchY, ore, this.range, this.arcWidth, this.direction)) {
-                console.log(`Ore hit with fist at (${ore.x}, ${ore.y})`);
+            if (doesHitRock(punchX, punchY, ore, this.range, this.arcWidth, this.direction, 
+                           this.useRectangle, this.width)) {
+                console.log(`Ore hit with fist at (${ore.x}, ${ore.y}) using rectangular hitbox`);
                 
                 // Calculate damage based on player stats: fistSkill level + (strength/2)
                 const fistSkillLevel = this.player.skills.fist.level || 1;

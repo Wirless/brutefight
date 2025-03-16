@@ -648,3 +648,10 @@ window.Attacks = {
     PickaxeAttack,
     AxeAttack
 }; 
+
+window.Attacks = Attacks;
+
+export default Attacks;
+
+//attacks.js:147 Uncaught ReferenceError: Attacks is not defined
+//    at attacks.js:147:16

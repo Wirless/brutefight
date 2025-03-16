@@ -4,6 +4,10 @@ This guide will help you install and run BruteFight on Ubuntu 24.04 using port 4
 
 ## Prerequisites
 
+
+or just do massive skip with winscp and drag and drop without having to create multi directories like a twat or use git for everything. 
+
+
 ### 1. Install Node.js and npm
 
 ```bash
