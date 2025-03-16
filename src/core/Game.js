@@ -266,6 +266,15 @@ class Game {
         
         // Set player data
         this.myPlayer = data.playerData;
+        
+        // Map server properties to client properties if needed
+        if (this.myPlayer.hp !== undefined && this.myPlayer.health === undefined) {
+            this.myPlayer.health = this.myPlayer.hp;
+        }
+        if (this.myPlayer.maxhp !== undefined && this.myPlayer.maxHealth === undefined) {
+            this.myPlayer.maxHealth = this.myPlayer.maxhp;
+        }
+        
         this.username = data.playerData.username || document.getElementById('usernameInput').value;
         
         // Start the game
@@ -950,6 +959,34 @@ class Game {
     handleLeaderboardData(data) {
         if (this.leaderboardUI) {
             this.leaderboardUI.update(data, this.username);
+        }
+    }
+
+    /**
+     * Handle socket event: world update
+     * @param {Object} data - World update data
+     */
+    handleWorldUpdate(data) {
+        // Update player data if available
+        if (data.players && data.players[this.username]) {
+            const serverPlayerData = data.players[this.username];
+            
+            // Update player properties
+            if (serverPlayerData.hp !== undefined) {
+                this.myPlayer.health = serverPlayerData.hp;
+                this.myPlayer.hp = serverPlayerData.hp;
+            }
+            
+            if (serverPlayerData.maxhp !== undefined) {
+                this.myPlayer.maxHealth = serverPlayerData.maxhp;
+                this.myPlayer.maxhp = serverPlayerData.maxhp;
+            }
+            
+            // Update other players
+            this.players = data.players;
+            
+            // Update UI
+            this.updateStatsDisplay();
         }
     }
 
@@ -2325,13 +2362,16 @@ class Game {
         const cps = this.availableAttacks?.fist?.clicksPerSecond || 0;
         const cpsBonus = Math.min(0.5, cps * 0.05);
         
+        // Ensure experience values are available
+        const totalExperience = this.myPlayer.experience || 0;
+        
         // Create stats HTML string
         const statsHTML = `
             <div style="text-align: center; margin-bottom: 5px; color: rgb(0, 233, 150);">Player Stats</div>
             <div>Level: ${this.myPlayer.level}</div>
             <div>Health: ${Math.floor(this.myPlayer.health)}/${this.myPlayer.maxHealth}</div>
             <div style="border-bottom: 1px solid #444; padding-bottom: 5px;">
-                XP: ${this.myPlayer.experience}/${this.myPlayer.expToNextLevel}
+                Total EXP: ${totalExperience}
             </div>
             <div style="color: #ff9966;">STR: ${this.myPlayer.strength}</div>
             <div style="color: #99ccff;">DEF: ${this.myPlayer.defense}</div>

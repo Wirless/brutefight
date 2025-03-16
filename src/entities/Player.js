@@ -114,7 +114,7 @@ class Player {
      */
     calculateStats() {
         // Base stats
-        let healthMax = 100 + (this.level - 1) * 10;
+        let healthMax = 100 + (this.level - 1) * 5;
         let manaMax = 100 + (this.level - 1) * 5;
         let staminaMax = 100 + (this.level - 1) * 8;
         let moveSpeed = 5 + (this.level - 1) * 0.1;
@@ -159,6 +159,9 @@ class Player {
         this.health = Math.min(this.health, this.maxHealth);
         this.mana = Math.min(this.mana, this.maxMana);
         this.stamina = Math.min(this.stamina, this.maxStamina);
+        
+        // Update experience needed for next level
+        this.expToNextLevel = this.calculateExpToNextLevel();
     }
     
     /**
@@ -167,15 +170,30 @@ class Player {
      * @returns {boolean} - Whether the player leveled up
      */
     addExperience(amount) {
+        // Store old level for comparison
+        const oldLevel = this.level;
+        
+        // Add experience
         this.experience += amount;
         
-        // Check for level up
-        if (this.experience >= this.expToNextLevel) {
-            this.levelUp();
-            return true;
+        // Update level based on experience if PlayerProgression is available
+        if (window.PlayerProgression && window.PlayerProgression.calculateLevelFromExperience) {
+            this.level = window.PlayerProgression.calculateLevelFromExperience(this.experience);
+        } else {
+            // Simple fallback level calculation
+            this.level = Math.floor(Math.sqrt(this.experience / 100)) + 1;
         }
         
-        return false;
+        // Recalculate necessary values if level changed
+        if (this.level > oldLevel) {
+            this.calculateStats();
+            return true; // Indicate level up
+        }
+        
+        // Update experience to next level
+        this.expToNextLevel = this.calculateExpToNextLevel();
+        
+        return false; // No level up
     }
     
     /**

@@ -224,6 +224,19 @@ export class ExperienceBar {
         const totalXp = this.player.experience || 0;
         const progress = calculateLevelProgress(totalXp);
         
+        // Update player level and experience values if they're not in sync
+        if (this.player.level !== progress.level) {
+            this.player.level = progress.level;
+            
+            // Make sure player stats are recalculated with new level
+            if (typeof this.player.calculateStats === 'function') {
+                this.player.calculateStats();
+            }
+        }
+        
+        // Ensure player's expToNextLevel is set correctly
+        this.player.expToNextLevel = progress.requiredXp;
+        
         // Update the progress bar width
         this.progressBar.style.width = `${progress.percentage}%`;
         
@@ -276,6 +289,11 @@ export class ExperienceBar {
             document.body.removeChild(message);
         }, 2000);
         
+        // If player has calculateStats method, call it to update health and other stats
+        if (this.player && typeof this.player.calculateStats === 'function') {
+            this.player.calculateStats();
+        }
+        
         // Play level up sound if available
         try {
             if (window.audioContext) {
@@ -285,6 +303,11 @@ export class ExperienceBar {
             }
         } catch (error) {
             console.error("Error playing level up sound:", error);
+        }
+        
+        // Update skills window if it exists
+        if (window.skillsManager && typeof window.skillsManager.updateUI === 'function') {
+            window.skillsManager.updateUI();
         }
     }
     
