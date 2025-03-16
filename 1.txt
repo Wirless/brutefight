@@ -1,0 +1,15 @@
+in skills window display position in leaderboards for all players have a leaderboards file that you update when players disconnect or every 10minutes if player is online right. we need offline leaderboard ui panel opened with button insert some icon inside hotkey perhaps L?
+so skills look:
+Mining [1] Level 10  signifying the leaderboard position extra points if on hover of their position it shows 10 people lower and 10 people up in tooltip unless there is less than 10 up then only few :)
+
+the leaderboard window ui should have tabs with skills and all players position  on first run u could scan all current players to build basic database then update it when players disconnect from game for now :)
+
+the tooltip should disappear when closing window or when not in position of the leader board position [position] skilllevel
+
+in the skills window in  leaderboardUI window do not use tooltips unless maybe for actual players ? 
+show their stats distribution.
+
+
+also i found discrepancies between experiencebar feature and actual player level perhaps playerprogression has to be updated.
+
+
