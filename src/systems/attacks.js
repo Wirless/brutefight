@@ -202,14 +202,42 @@ function isPointInSquare(pointX, pointY, squareX, squareY, halfSize) {
  * @param {Object} tree - Tree object to check for hit
  * @returns {boolean} - True if the tree is hit
  */
-function doesHitTree(attackX, attackY, tree) {
+function doesHitTree(attackX, attackY, tree, playerX, playerY) {
     if (!tree || tree.chopped) return false;
     
     // Use square hitbox for trees - slightly larger than radius
     const treeRadius = tree.radius || 30;
     const treeHitboxSize = treeRadius + 5; // 5 pixels larger
     
-    // Use square hitbox detection
+    // If player position is provided, check for very close trees
+    if (playerX !== undefined && playerY !== undefined) {
+        const playerToTreeX = tree.x - playerX;
+        const playerToTreeY = tree.y - playerY;
+        const playerToTreeDistance = Math.sqrt(playerToTreeX * playerToTreeX + playerToTreeY * playerToTreeY);
+        
+        // Special case for trees that are very close to player (within player radius + tree radius)
+        const playerRadius = 15; // Default player radius
+        if (playerToTreeDistance <= playerRadius + treeRadius + 5) {
+            // For very close trees, we only care if the player is facing the right direction
+            // Calculate angle to tree from player
+            const angleToTree = Math.atan2(playerToTreeY, playerToTreeX);
+            
+            // Get attack direction from player to attack point
+            const attackDirection = Math.atan2(attackY - playerY, attackX - playerX);
+            
+            // Calculate angle difference
+            let angleDiff = angleToTree - attackDirection;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            
+            // Consider it a hit if player is roughly facing the tree (within 90 degrees)
+            if (Math.abs(angleDiff) <= Math.PI/2) {
+                return true;
+            }
+        }
+    }
+    
+    // Use square hitbox detection for normal cases
     return isPointInSquare(attackX, attackY, tree.x, tree.y, treeHitboxSize);
 }
 
@@ -252,14 +280,27 @@ function doesHitRock(attackX, attackY, ore, range, angleWidth, direction, useRec
         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
         
+        // Calculate distance from player to ore (not from attack point)
+        const playerToOreX = ore.x - (attackX - Math.cos(direction) * range);
+        const playerToOreY = ore.y - (attackY - Math.sin(direction) * range);
+        const playerToOreDistance = Math.sqrt(playerToOreX * playerToOreX + playerToOreY * playerToOreY);
+        
         // Check if ore is within the rectangle:
         // 1. Distance should be less than range + hitRadius for length
-        const inRange = distance <= range + hitRadius;
+        // IMPORTANT: For close targets, we'll check using player-to-ore distance instead
+        const inRange = playerToOreDistance <= range + hitRadius;
         
         // 2. Angular distance should be small enough for width
         // Convert angular width to a linear width at the distance of the ore
-        const halfAngularWidth = Math.atan2(rectWidth / 2, distance);
+        const halfAngularWidth = Math.atan2(rectWidth / 2, Math.max(5, distance));
         const inWidth = Math.abs(angleDiff) <= halfAngularWidth;
+        
+        // Special case: if ore is VERY close (less than player radius * 2), 
+        // consider it a hit if player is facing towards it (within 90 degrees)
+        const playerRadius = 15; // Default player radius
+        if (playerToOreDistance <= playerRadius * 2 && Math.abs(angleDiff) <= Math.PI/2) {
+            return true;
+        }
         
         return inRange && inWidth;
     }
@@ -274,8 +315,32 @@ function doesHitRock(attackX, attackY, ore, range, angleWidth, direction, useRec
         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
         
+        // Calculate distance from player to ore (not from attack point)
+        const playerToOreX = ore.x - (attackX - Math.cos(direction) * range);
+        const playerToOreY = ore.y - (attackY - Math.sin(direction) * range);
+        const playerToOreDistance = Math.sqrt(playerToOreX * playerToOreX + playerToOreY * playerToOreY);
+        
+        // Special case: if ore is VERY close (less than player radius * 2), 
+        // consider it a hit if player is facing towards it (within 90 degrees)
+        const playerRadius = 15; // Default player radius
+        if (playerToOreDistance <= playerRadius * 2 && Math.abs(angleDiff) <= Math.PI/2) {
+            return true;
+        }
+        
         // Check if ore is within range and angle
         return distance <= range + hitRadius && Math.abs(angleDiff) <= angleWidth / 2;
+    }
+    
+    // Calculate distance from player to ore (not from attack point)
+    const playerToOreX = ore.x - (attackX - Math.cos(direction) * range);
+    const playerToOreY = ore.y - (attackY - Math.sin(direction) * range);
+    const playerToOreDistance = Math.sqrt(playerToOreX * playerToOreX + playerToOreY * playerToOreY);
+    
+    // Special case: if ore is VERY close (less than player radius * 2), 
+    // consider it a hit regardless of angle
+    const playerRadius = 15; // Default player radius
+    if (playerToOreDistance <= playerRadius * 2) {
+        return true;
     }
     
     // Simpler check if we don't need angles
@@ -1758,6 +1823,10 @@ class FistAttack extends Attack {
         const punchX = player.x + Math.cos(this.direction) * this.range;
         const punchY = player.y + Math.sin(this.direction) * this.range;
         
+        // Check for close targets first - we'll expand the search radius for very close objects
+        const playerRadius = player.radius || 15;
+        const closeRange = playerRadius * 2; // Close range detection for items right next to player
+        
         // Don't play hit sound automatically - only play when we actually hit something
         // We'll play it below when we hit an ore or tree
         
@@ -1775,6 +1844,76 @@ class FistAttack extends Attack {
         
         // Debug info
         console.log(`Checking fist hits against ${ores.length} ores with range ${this.range}px`);
+        
+        // Find very close ores first - these get special treatment
+        const closeOres = ores.filter(ore => {
+            if (!ore || ore.broken || (ore.visible === false) || this.hitTargets.has(ore.id)) return false;
+            
+            const dx = ore.x - player.x;
+            const dy = ore.y - player.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Check if ore is very close to the player
+            return distance <= (ore.radius || 20) + closeRange;
+        });
+        
+        // Special logic for close ores - more forgiving hit detection
+        for (const ore of closeOres) {
+            // Calculate angle to ore
+            const dx = ore.x - player.x;
+            const dy = ore.y - player.y;
+            const angleToOre = Math.atan2(dy, dx);
+            
+            // If player is facing approximately toward the ore (within 90 degrees)
+            let angleDiff = angleToOre - this.direction;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            
+            if (Math.abs(angleDiff) <= Math.PI/2) {
+                console.log(`Close ore hit with fist at (${ore.x}, ${ore.y}) - special close range detection`);
+                
+                // Calculate damage based on player stats: fistSkill level + (strength/2)
+                const damage = this.calculateDamage(1, 1, player.strength || 1, 'rock');
+                
+                console.log(`Applying ${damage} damage to close ore with health: ${ore.health || 100}`);
+                
+                // Apply damage to ore
+                let oreDestroyed = false;
+                
+                if (ore.hit) {
+                    oreDestroyed = ore.hit(damage, player);
+                } else {
+                    console.warn("Ore doesn't have a hit method:", ore);
+                }
+                
+                hits.push({
+                    target: ore,
+                    damage: damage,
+                    destroyed: oreDestroyed
+                });
+                
+                // Add to hit targets set so we don't hit it again in this attack
+                this.hitTargets.add(ore.id);
+                
+                // Play hit sound
+                this.playHitSound();
+                
+                // Create particles
+                this.createDefaultParticles(ore.x, ore.y, ore.color || '#888');
+                
+                // Increase skill
+                this.increaseFistSkill(ore, damage);
+                
+                // Create damage number
+                this.createCriticalHitText(ore.x, ore.y, damage);
+                
+                // Get drops if ore was destroyed
+                if (oreDestroyed) {
+                    const drops = ore.getDrops ? ore.getDrops() : { experience: 5 };
+                    this.createExperienceOrbs(ore, drops);
+                }
+            }
+        }
         
         // Check collision with rocks - hit ALL ores in range instead of just closest
         for (const ore of ores) {
@@ -1798,65 +1937,39 @@ class FistAttack extends Attack {
                 if (ore.hit) {
                     oreDestroyed = ore.hit(damage, player);
                 } else {
-                    ore.health = (ore.health || 100) - damage;
-                    if (ore.health <= 0) {
-                        ore.health = 0;
-                        ore.broken = true; // Mark as broken when destroyed
-                        oreDestroyed = true;
-                    }
+                    console.warn("Ore doesn't have a hit method:", ore);
                 }
                 
-                // Mark this ore as hit in this attack
+                hits.push({
+                    target: ore,
+                    damage: damage,
+                    destroyed: oreDestroyed
+                });
+                
+                // Add to hit targets set so we don't hit it again in this attack
                 this.hitTargets.add(ore.id);
                 
-                // Increase fist skill on successful hit
-                this.increaseFistSkill(ore, damage);
-                
-                // Create hit effect
-                this.createDefaultParticles(ore.x, ore.y, ore.color);
-                
-                // Play hit sound again for feedback
+                // Play hit sound
                 this.playHitSound();
                 
-                // Add ore to hit list
-                hits.push(ore);
+                // Create particles
+                this.createDefaultParticles(ore.x, ore.y, ore.color || '#888');
                 
-                // Add to hit rocks for visual effect
-                if (!window.hitRocks) window.hitRocks = new Set();
-                if (!window.rockHitTimes) window.rockHitTimes = new Map();
+                // Increase skill
+                this.increaseFistSkill(ore, damage);
                 
-                window.hitRocks.add(ore);
-                window.rockHitTimes.set(ore, Date.now());
+                // Create damage number
+                this.createCriticalHitText(ore.x, ore.y, damage);
                 
-                // Random chance (1 in 10) to create an experience orb on hit
-                if (Math.random() < 0.1) {
-                    console.log("Lucky fist hit on rock! +1 experience orb");
-                    
-                    // Create a single experience orb
-                    if (window.expOrbManager) {
-                        // Random position slightly offset from where the hit occurred
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 10 + Math.random() * 5;
-                        const orbX = ore.x + Math.cos(angle) * distance;
-                        const orbY = ore.y + Math.sin(angle) * distance;
-                        
-                        // Create a small orb with 1 XP
-                        window.expOrbManager.createOrb(orbX, orbY, 1);
-                    } else if (window.experienceOrbManager) {
-                        window.experienceOrbManager.createExperienceOrbs(ore.x, ore.y, 1);
-                    }
-                }
-                
-                // If ore is destroyed, create experience orbs
+                // Get drops if ore was destroyed
                 if (oreDestroyed) {
-                    console.log("Ore destroyed with fist!");
-                    const drops = ore.getDrops ? ore.getDrops() : { experience: 3 };
+                    const drops = ore.getDrops ? ore.getDrops() : { experience: 5 };
                     this.createExperienceOrbs(ore, drops);
                 }
             }
         }
         
-        // Check collision with trees - process as before
+        // Check collision with trees - also handle trees with the same improved detection
         const trees = [];
         
         // Try different ways to access trees, using whatever method might be available
@@ -1868,108 +1981,178 @@ class FistAttack extends Attack {
             trees.push(...window.treeManager.trees);
         }
         
-        // Process tree hits - only hit trees not already hit in this attack
-        if (trees.length > 0) {
-            for (const tree of trees) {
-                // Skip if tree is already hit in this attack
-                if (!tree || this.hitTargets.has(tree.id)) continue;
+        // Find very close trees first - these get special treatment
+        const closeTrees = trees.filter(tree => {
+            if (!tree || this.hitTargets.has(tree.id)) return false;
+            
+            const dx = tree.x - player.x;
+            const dy = tree.y - player.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Check if tree is very close to the player
+            return distance <= (tree.radius || 25) + closeRange;
+        });
+        
+        // Special logic for close trees - more forgiving hit detection
+        for (const tree of closeTrees) {
+            // Calculate angle to tree
+            const dx = tree.x - player.x;
+            const dy = tree.y - player.y;
+            const angleToTree = Math.atan2(dy, dx);
+            
+            // If player is facing approximately toward the tree (within 90 degrees)
+            let angleDiff = angleToTree - this.direction;
+            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            
+            if (Math.abs(angleDiff) <= Math.PI/2) {
+                console.log(`Close tree hit with fist - special close range detection`);
                 
-                // Use the helper function to check if the punch hits the tree
-                if (doesHitTree(punchX, punchY, tree)) {
-                    console.log("Tree hit detected with square hitbox!");
-                    
-                    // Mark tree as hit
-                    this.hitTargets.add(tree.id);
-                    
-                    // Calculate damage: 2 + strength for trees
-                    const damage = this.calculateDamage(2, 2, player.strength || 1, 'tree');
-                    
-                    // Get fist level for critical hit calculation
-                    const fistLevel = this.player.skills.fist.level || 1;
-                    
-                    // Check for critical hit based on clicks per second and fist level
-                    const criticalChanceBase = Math.min(0.5, this.clicksPerSecond * 0.05);
-                    let criticalChance = criticalChanceBase;
-                    
-                    // Increase critical chance based on fist level
-                    if (fistLevel >= 50) criticalChance += 0.15; // 15% extra at level 50+
-                    else if (fistLevel >= 25) criticalChance += 0.1; // 10% extra at level 25+
-                    
-                    const isCritical = Math.random() < criticalChance;
-                    
-                    let finalDamage = damage;
-                    if (isCritical) {
-                        finalDamage *= 2;
-                        this.createCriticalHitText(tree.x, tree.y, finalDamage);
-                    }
-                    
-                    console.log(`Applying ${finalDamage} damage to tree with health: ${tree.health || 100}`);
-                    
-                    // Apply damage to tree
-                    let treeDestroyed = false;
-                    
-                    if (typeof tree.hit === 'function') {
-                        treeDestroyed = tree.hit(finalDamage, player);
-                    } else if (tree.health !== undefined) {
-                        tree.health -= finalDamage;
-                        if (tree.health <= 0) {
-                            tree.health = 0;
-                            treeDestroyed = true;
-                            // Try to call chop method if it exists
-                            if (typeof tree.chop === 'function') {
-                                tree.chop();
-                            }
+                // Calculate damage: 2 + strength for trees
+                const damage = this.calculateDamage(2, 2, player.strength || 1, 'tree');
+                
+                // Get fist level for critical hit calculation
+                const fistLevel = this.player.skills.fist.level || 1;
+                
+                // Check for critical hit based on clicks per second and fist level
+                const criticalChanceBase = Math.min(0.5, this.clicksPerSecond * 0.05);
+                let criticalChance = criticalChanceBase;
+                
+                // Increase critical chance based on fist level
+                if (fistLevel >= 50) criticalChance += 0.15; // 15% extra at level 50+
+                else if (fistLevel >= 25) criticalChance += 0.1; // 10% extra at level 25+
+                
+                const isCritical = Math.random() < criticalChance;
+                
+                let finalDamage = damage;
+                if (isCritical) {
+                    finalDamage *= 2;
+                }
+                
+                console.log(`Applying ${finalDamage} damage to tree with health: ${tree.health || 100}`);
+                
+                // Apply damage to tree
+                let treeDestroyed = false;
+                
+                if (typeof tree.hit === 'function') {
+                    treeDestroyed = tree.hit(finalDamage, player);
+                } else if (tree.health !== undefined) {
+                    tree.health -= finalDamage;
+                    if (tree.health <= 0) {
+                        tree.health = 0;
+                        treeDestroyed = true;
+                        // Try to call chop method if it exists
+                        if (typeof tree.chop === 'function') {
+                            tree.chop();
                         }
                     }
-                    
-                    // Increase fist skill
-                    this.increaseFistSkill(tree, finalDamage);
-                    
-                    // Create wood particles at the hit location
-                    this.createWoodParticles(tree.x, tree.y, tree.trunkColor || '#8B4513');
-                    
-                    // Play hit sound
-                    this.playHitSound();
-                    
-                    // Add to hit trees for visual effect
-                    if (!window.hitTrees) window.hitTrees = new Set();
-                    if (!window.treeHitTimes) window.treeHitTimes = new Map();
-                    
-                    window.hitTrees.add(tree);
-                    window.treeHitTimes.set(tree, Date.now());
-                    
-                    // If also using rock hit effects for trees
-                    if (!window.hitRocks) window.hitRocks = new Set();
-                    if (!window.rockHitTimes) window.rockHitTimes = new Map();
-                    
-                    window.hitRocks.add(tree);
-                    window.rockHitTimes.set(tree, Date.now());
-                    
-                    // Random chance (1 in 10) to create an experience orb on hit
-                    if (Math.random() < 0.1) {
-                        console.log("Lucky fist hit on tree! +1 experience orb");
-                        
-                        // Create a single experience orb
-                        if (window.expOrbManager) {
-                            // Random position slightly offset from where the hit occurred
-                            const angle = Math.random() * Math.PI * 2;
-                            const distance = 10 + Math.random() * 5;
-                            const orbX = tree.x + Math.cos(angle) * distance;
-                            const orbY = tree.y + Math.sin(angle) * distance;
-                            
-                            // Create a small orb with 1 XP
-                            window.expOrbManager.createOrb(orbX, orbY, 1);
-                        } else if (window.experienceOrbManager) {
-                            window.experienceOrbManager.createExperienceOrbs(tree.x, tree.y, 1);
+                }
+                
+                hits.push({
+                    target: tree,
+                    damage: finalDamage,
+                    destroyed: treeDestroyed
+                });
+                
+                // Mark tree as hit
+                this.hitTargets.add(tree.id);
+                
+                // Increase fist skill
+                this.increaseFistSkill(tree, finalDamage);
+                
+                // Create wood particles at the hit location
+                this.createWoodParticles(tree.x, tree.y, tree.trunkColor || '#8B4513');
+                
+                // Create damage number
+                this.createCriticalHitText(tree.x, tree.y, finalDamage);
+                
+                // Play hit sound
+                this.playHitSound();
+                
+                // If tree was destroyed, create experience orbs
+                if (treeDestroyed) {
+                    console.log("Tree destroyed with fist!");
+                    const drops = tree.getDrops ? tree.getDrops() : { experience: 5 };
+                    this.createWoodExperienceOrbs(tree, drops);
+                }
+            }
+        }
+        
+        // Process regular tree hits
+        for (const tree of trees) {
+            // Skip if tree is already hit in this attack
+            if (!tree || this.hitTargets.has(tree.id)) continue;
+            
+            // Use the helper function to check if the punch hits the tree
+            if (doesHitTree(punchX, punchY, tree, player.x, player.y)) {
+                console.log("Tree hit detected with square hitbox!");
+                
+                // Calculate damage: 2 + strength for trees
+                const damage = this.calculateDamage(2, 2, player.strength || 1, 'tree');
+                
+                // Get fist level for critical hit calculation
+                const fistLevel = this.player.skills.fist.level || 1;
+                
+                // Check for critical hit based on clicks per second and fist level
+                const criticalChanceBase = Math.min(0.5, this.clicksPerSecond * 0.05);
+                let criticalChance = criticalChanceBase;
+                
+                // Increase critical chance based on fist level
+                if (fistLevel >= 50) criticalChance += 0.15; // 15% extra at level 50+
+                else if (fistLevel >= 25) criticalChance += 0.1; // 10% extra at level 25+
+                
+                const isCritical = Math.random() < criticalChance;
+                
+                let finalDamage = damage;
+                if (isCritical) {
+                    finalDamage *= 2;
+                }
+                
+                console.log(`Applying ${finalDamage} damage to tree with health: ${tree.health || 100}`);
+                
+                // Apply damage to tree
+                let treeDestroyed = false;
+                
+                if (typeof tree.hit === 'function') {
+                    treeDestroyed = tree.hit(finalDamage, player);
+                } else if (tree.health !== undefined) {
+                    tree.health -= finalDamage;
+                    if (tree.health <= 0) {
+                        tree.health = 0;
+                        treeDestroyed = true;
+                        // Try to call chop method if it exists
+                        if (typeof tree.chop === 'function') {
+                            tree.chop();
                         }
                     }
-                    
-                    // If tree was destroyed, create experience orbs
-                    if (treeDestroyed) {
-                        console.log("Tree destroyed with fist!");
-                        const drops = tree.getDrops ? tree.getDrops() : { experience: 5 };
-                        this.createWoodExperienceOrbs(tree, drops);
-                    }
+                }
+                
+                hits.push({
+                    target: tree,
+                    damage: finalDamage,
+                    destroyed: treeDestroyed
+                });
+                
+                // Mark tree as hit
+                this.hitTargets.add(tree.id);
+                
+                // Increase fist skill
+                this.increaseFistSkill(tree, finalDamage);
+                
+                // Create wood particles at the hit location
+                this.createWoodParticles(tree.x, tree.y, tree.trunkColor || '#8B4513');
+                
+                // Create damage number
+                this.createCriticalHitText(tree.x, tree.y, finalDamage);
+                
+                // Play hit sound
+                this.playHitSound();
+                
+                // If tree was destroyed, create experience orbs
+                if (treeDestroyed) {
+                    console.log("Tree destroyed with fist!");
+                    const drops = tree.getDrops ? tree.getDrops() : { experience: 5 };
+                    this.createWoodExperienceOrbs(tree, drops);
                 }
             }
         }

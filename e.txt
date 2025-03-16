@@ -1,0 +1,2 @@
+when destroying a tree we could tilt the sprite and make it fall off into white smoke :D so it would just cut out the sprite after falling out of the mask right?
+@Tree.js @trees.js @TreeManager.js  we need after destroying tree to display animation of the tree tilting some degrees to right and falling and some white smoke particles where its falling while decaying the sprite opacity to 0 and deconstructing the tree.
