@@ -699,17 +699,17 @@ class PickaxeAttack extends Attack {
             // Add bonus exp for special ores if we have ore type information
             if (node.type) {
                 switch(node.type) {
-                    case 'copper': totalExp += 10; break;
-                    case 'iron': totalExp += 15; break;
-                    case 'gold': totalExp += 25; break;
-                    case 'diamond': totalExp += 40; break;
-                    default: totalExp += 5; break;
-                }
+                case 'copper': totalExp += 10; break;
+                case 'iron': totalExp += 15; break;
+                case 'gold': totalExp += 25; break;
+                case 'diamond': totalExp += 40; break;
+                default: totalExp += 5; break;
             }
-            
-            // Add randomness
-            totalExp += Math.floor(Math.random() * 5);
-        } else {
+        }
+        
+        // Add randomness
+        totalExp += Math.floor(Math.random() * 5);
+            } else {
             // Default for other skill types
             totalExp = drops.experience || 5;
         }
@@ -1139,60 +1139,60 @@ class AxeAttack extends Attack {
                 // Use the helper function to check if the axe hits the tree
                 if (doesHitTree(attackX, attackY, targetTree)) {
                     console.log(`Hitting tree at (${targetTree.x}, ${targetTree.y}) with axe`);
-                    
-                    // Apply woodcutting skill bonus if it exists
-                    let damageMultiplier = 1.0;
-                    if (window.game && window.game.skillsManager) {
-                        const woodcuttingSkill = window.game.skillsManager.getSkill('woodcutting');
-                        if (woodcuttingSkill) {
-                            const level = woodcuttingSkill.level || 1;
-                            damageMultiplier = 1 + (Math.floor(level / 10) * 0.1); // 10% per 10 levels
-                        }
+                
+                // Apply woodcutting skill bonus if it exists
+                let damageMultiplier = 1.0;
+                if (window.game && window.game.skillsManager) {
+                    const woodcuttingSkill = window.game.skillsManager.getSkill('woodcutting');
+                    if (woodcuttingSkill) {
+                        const level = woodcuttingSkill.level || 1;
+                        damageMultiplier = 1 + (Math.floor(level / 10) * 0.1); // 10% per 10 levels
                     }
-                    
-                    const damage = Math.floor(this.damage * damageMultiplier);
-                    
-                    // Hit the tree
-                    let treeDestroyed = false;
-                    if (typeof targetTree.hit === 'function') {
+                }
+                
+                const damage = Math.floor(this.damage * damageMultiplier);
+                
+                // Hit the tree
+                let treeDestroyed = false;
+                if (typeof targetTree.hit === 'function') {
                         treeDestroyed = targetTree.hit(damage, this.player);
-                    } else if (targetTree.health !== undefined) {
-                        targetTree.health -= damage;
-                        if (targetTree.health <= 0) {
-                            targetTree.health = 0;
-                            treeDestroyed = true;
-                            // Try to call chop method if it exists
-                            if (typeof targetTree.chop === 'function') {
-                                targetTree.chop();
-                            }
+                } else if (targetTree.health !== undefined) {
+                    targetTree.health -= damage;
+                    if (targetTree.health <= 0) {
+                        targetTree.health = 0;
+                        treeDestroyed = true;
+                        // Try to call chop method if it exists
+                        if (typeof targetTree.chop === 'function') {
+                            targetTree.chop();
                         }
                     }
-                    
-                    // Register hit
-                    this.hasHit = true;
-                    hitSomething = true;
-                    
-                    // Create wood particles
-                    this.createWoodParticles(targetTree.x, targetTree.y, targetTree.trunkColor || '#8B4513');
-                    
-                    // Play hit sound (only for the first tree to avoid sound spam)
-                    if (distance === treesToHit[0].distance) {
-                        this.playHitSound();
-                    }
-                    
-                    // Create experience orbs if tree was destroyed
-                    if (treeDestroyed) {
-                        console.log("Tree chopped down!");
-                        const drops = targetTree.getDrops ? targetTree.getDrops() : { experience: 10 };
-                        this.createWoodExperienceOrbs(targetTree, drops);
-                    }
-                    
-                    // Add to hit trees for visual effect
-                    if (!window.hitRocks) window.hitRocks = new Set();
-                    if (!window.rockHitTimes) window.rockHitTimes = new Map();
-                    
-                    window.hitRocks.add(targetTree);
-                    window.rockHitTimes.set(targetTree, Date.now());
+                }
+                
+                // Register hit
+                this.hasHit = true;
+                hitSomething = true;
+                
+                // Create wood particles
+                this.createWoodParticles(targetTree.x, targetTree.y, targetTree.trunkColor || '#8B4513');
+                
+                // Play hit sound (only for the first tree to avoid sound spam)
+                if (distance === treesToHit[0].distance) {
+                    this.playHitSound();
+                }
+                
+                // Create experience orbs if tree was destroyed
+                if (treeDestroyed) {
+                    console.log("Tree chopped down!");
+                    const drops = targetTree.getDrops ? targetTree.getDrops() : { experience: 10 };
+                    this.createWoodExperienceOrbs(targetTree, drops);
+                }
+                
+                // Add to hit trees for visual effect
+                if (!window.hitRocks) window.hitRocks = new Set();
+                if (!window.rockHitTimes) window.rockHitTimes = new Map();
+                
+                window.hitRocks.add(targetTree);
+                window.rockHitTimes.set(targetTree, Date.now());
                 }
             }
         }
@@ -1213,13 +1213,13 @@ class AxeAttack extends Attack {
                     // Use our helper function with adjusted parameters for the axe
                     // Axe has wider arc than pickaxe (110 degrees)
                     if (doesHitRock(attackX, attackY, ore, AXE_ATTACK_RADIUS, Math.PI * 0.6, this.direction)) {
-                        const dx = ore.x - attackX;
-                        const dy = ore.y - attackY;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        
-                        if (distance < closestDistance) {
-                            closestDistance = distance;
-                            closestOre = ore;
+                    const dx = ore.x - attackX;
+                    const dy = ore.y - attackY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < closestDistance) {
+                        closestDistance = distance;
+                        closestOre = ore;
                         }
                     }
                 }
@@ -1349,12 +1349,14 @@ class FistAttack extends Attack {
     // Calculate damage based on fist skill
     calculateDamage(baseMin, baseMax, strength, targetType = 'default') {
         // Get current fist skill level
-        const fistLevel = this.player.skills.fist.level || 1;
+        const fistLevel = this.player.skills.fist?.level || 1;
         
         // Apply specific damage for rocks and trees as requested
         if (targetType === 'rock') {
-            // For rocks: 1 + strength damage
-            return 1 + (strength || 1);
+            // For rocks: 1 + strength + (fist skill / 2) damage
+            const fistBonus = Math.floor(fistLevel / 2);
+            console.log(`Fist damage calculation - Strength: ${strength}, Fist level: ${fistLevel}, Fist bonus: ${fistBonus}`);
+            return 1 + (strength || 1) + fistBonus;
         } else if (targetType === 'tree') {
             // For trees: 2 + strength damage
             return 2 + (strength || 1);
@@ -1616,79 +1618,91 @@ class FistAttack extends Attack {
         // Play hit sound on any attack regardless of hit
         this.playHitSound();
         
-        // Check collision with rocks (handled by ore manager)
-        if (window.oreManager) {
-            const ores = window.oreManager.ores || [];
-            for (const ore of ores) {
-                // Skip if ore is not visible
-                if (!ore || !ore.visible) continue;
+        // Get ores from all possible sources
+        let ores = [];
+        
+        // Try window.ores first (used by pickaxe)
+        if (window.ores && Array.isArray(window.ores)) {
+            ores = window.ores;
+        } 
+        // Then try oreManager if available
+        else if (window.oreManager && window.oreManager.ores) {
+            ores = window.oreManager.ores;
+        }
+        
+        // Debug info
+        console.log(`Checking fist hits against ${ores.length} ores`);
+        
+        // Check collision with rocks
+        for (const ore of ores) {
+            // Skip if ore is not visible or broken
+            if (!ore || ore.broken || (ore.visible === false)) continue;
+            
+            // Use the helper function to check if the punch hits the ore
+            if (doesHitRock(punchX, punchY, ore, this.range, this.arcWidth, this.direction)) {
+                console.log(`Ore hit with fist at (${ore.x}, ${ore.y})`);
                 
-                // Use the helper function to check if the punch hits the ore
-                if (doesHitRock(punchX, punchY, ore, this.range, this.arcWidth, this.direction)) {
-                    console.log(`Ore hit with fist at (${ore.x}, ${ore.y})`);
-                    
-                    // Calculate damage: 1 + strength for rocks
-                    const damage = this.calculateDamage(1, 1, player.strength || 1, 'rock');
-                    
-                    console.log(`Applying ${damage} damage to ore with health: ${ore.health || 100}`);
-                    
-                    // Apply damage to ore
-                    let oreDestroyed = false;
-                    
-                    if (ore.hit) {
-                        oreDestroyed = ore.hit(damage, player);
-                    } else {
-                        ore.health = (ore.health || 100) - damage;
-                        if (ore.health <= 0) {
-                            ore.health = 0;
-                            oreDestroyed = true;
-                        }
+                // Calculate damage: 1 + strength + (fist skill / 2) for rocks
+                const damage = this.calculateDamage(1, 1, player.strength || 1, 'rock');
+                
+                console.log(`Applying ${damage} damage to ore with health: ${ore.health || 100}`);
+                
+                // Apply damage to ore
+                let oreDestroyed = false;
+                
+                if (ore.hit) {
+                    oreDestroyed = ore.hit(damage, player);
+                } else {
+                    ore.health = (ore.health || 100) - damage;
+                    if (ore.health <= 0) {
+                        ore.health = 0;
+                        oreDestroyed = true;
                     }
+                }
+                
+                // Increase fist skill on successful hit
+                this.increaseFistSkill(ore, damage);
+                
+                // Create hit effect
+                this.createDefaultParticles(ore.x, ore.y, ore.color);
+                
+                // Play hit sound again for feedback
+                this.playHitSound();
+                
+                // Add ore to hit list
+                hits.push(ore);
+                
+                // Add to hit rocks for visual effect
+                if (!window.hitRocks) window.hitRocks = new Set();
+                if (!window.rockHitTimes) window.rockHitTimes = new Map();
+                
+                window.hitRocks.add(ore);
+                window.rockHitTimes.set(ore, Date.now());
+                
+                // Random chance (1 in 10) to create an experience orb on hit
+                if (Math.random() < 0.1) {
+                    console.log("Lucky fist hit on rock! +1 experience orb");
                     
-                    // Increase fist skill on successful hit
-                    this.increaseFistSkill(ore, damage);
-                    
-                    // Create hit effect
-                    this.createDefaultParticles(ore.x, ore.y, ore.color);
-                    
-                    // Play hit sound again for feedback
-                    this.playHitSound();
-                    
-                    // Add ore to hit list
-                    hits.push(ore);
-                    
-                    // Add to hit rocks for visual effect
-                    if (!window.hitRocks) window.hitRocks = new Set();
-                    if (!window.rockHitTimes) window.rockHitTimes = new Map();
-                    
-                    window.hitRocks.add(ore);
-                    window.rockHitTimes.set(ore, Date.now());
-                    
-                    // Random chance (1 in 10) to create an experience orb on hit
-                    if (Math.random() < 0.1) {
-                        console.log("Lucky fist hit on rock! +1 experience orb");
+                    // Create a single experience orb
+                    if (window.expOrbManager) {
+                        // Random position slightly offset from where the hit occurred
+                        const angle = Math.random() * Math.PI * 2;
+                        const distance = 10 + Math.random() * 5;
+                        const orbX = ore.x + Math.cos(angle) * distance;
+                        const orbY = ore.y + Math.sin(angle) * distance;
                         
-                        // Create a single experience orb
-                        if (window.expOrbManager) {
-                            // Random position slightly offset from where the hit occurred
-                            const angle = Math.random() * Math.PI * 2;
-                            const distance = 10 + Math.random() * 5;
-                            const orbX = ore.x + Math.cos(angle) * distance;
-                            const orbY = ore.y + Math.sin(angle) * distance;
-                            
-                            // Create a small orb with 1 XP
-                            window.expOrbManager.createOrb(orbX, orbY, 1);
-                        } else if (window.experienceOrbManager) {
-                            window.experienceOrbManager.createExperienceOrbs(ore.x, ore.y, 1);
-                        }
+                        // Create a small orb with 1 XP
+                        window.expOrbManager.createOrb(orbX, orbY, 1);
+                    } else if (window.experienceOrbManager) {
+                        window.experienceOrbManager.createExperienceOrbs(ore.x, ore.y, 1);
                     }
-                    
-                    // If ore is destroyed, create experience orbs
-                    if (oreDestroyed) {
-                        console.log("Ore destroyed with fist!");
-                        const drops = ore.getDrops ? ore.getDrops() : { experience: 3 };
-                        this.createExperienceOrbs(ore, drops);
-                    }
+                }
+                
+                // If ore is destroyed, create experience orbs
+                if (oreDestroyed) {
+                    console.log("Ore destroyed with fist!");
+                    const drops = ore.getDrops ? ore.getDrops() : { experience: 3 };
+                    this.createExperienceOrbs(ore, drops);
                 }
             }
         }
@@ -1908,16 +1922,16 @@ class FistAttack extends Attack {
             // Add bonus exp for special ores if we have ore type information
             if (node.type) {
                 switch(node.type) {
-                    case 'copper': totalExp += 10; break;
-                    case 'iron': totalExp += 15; break;
-                    case 'gold': totalExp += 25; break;
-                    case 'diamond': totalExp += 40; break;
-                    default: totalExp += 5; break;
-                }
+                case 'copper': totalExp += 10; break;
+                case 'iron': totalExp += 15; break;
+                case 'gold': totalExp += 25; break;
+                case 'diamond': totalExp += 40; break;
+                default: totalExp += 5; break;
             }
-            
-            // Add randomness
-            totalExp += Math.floor(Math.random() * 5);
+        }
+        
+        // Add randomness
+        totalExp += Math.floor(Math.random() * 5);
         } else {
             // Default for other skill types
             totalExp = drops.experience || 5;
