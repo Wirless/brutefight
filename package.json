@@ -1,7 +1,8 @@
 {
-  "name": "multiplayer-2d-game",
-  "version": "1.0.0",
-  "description": "A simple multiplayer 2D game with Node.js, Express, and Socket.io",
+  "name": "brutefight",
+  "version": "1.1.0",
+  "description": "A multiplayer 2D game",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -17,11 +18,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2",
-    "bcrypt": "^5.1.1"
+    "bcrypt": "^5.1.1",
+    "express": "^4.21.2",
+    "socket.io": "^4.7.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
   }
-} 
+}
