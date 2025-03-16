@@ -32,7 +32,28 @@ class TreeManager {
             jungle: 10
         };
         
+        // Sound preloading
+        this.preloadSounds();
+        
         console.log("TreeManager initialized");
+    }
+    
+    /**
+     * Preload tree sounds
+     */
+    preloadSounds() {
+        try {
+            // Create tree falling sound
+            this.treeFallSound = new Audio('./sounds/tree_fall.mp3');
+            this.treeFallSound.preload = 'auto';
+            
+            // Add sound to global audio if available
+            if (window.audioManager && typeof window.audioManager.addSound === 'function') {
+                window.audioManager.addSound('tree_fall', './sounds/tree_fall.mp3');
+            }
+        } catch (error) {
+            console.warn("Could not preload tree sounds:", error);
+        }
     }
     
     /**
@@ -120,8 +141,52 @@ class TreeManager {
         // Update existing trees
         for (let i = this.trees.length - 1; i >= 0; i--) {
             const tree = this.trees[i];
-            tree.update(deltaTime);
+            
+            // Skip placeholders and trees without update method
+            if (tree.isRespawnPlaceholder || typeof tree.update !== 'function') continue;
+            
+            // Safely update the tree
+            try {
+                tree.update(deltaTime);
+            } catch (error) {
+                console.error(`Error updating tree ${tree.id} (${tree.type}):`, error);
+            }
+            
+            // Clean up fully chopped trees if needed
+            if (tree.chopped) {
+                if (!tree.isRespawning && !tree.scheduledRespawn) {
+                    // Flag tree for respawn - prevent multiple scheduling
+                    tree.scheduledRespawn = true;
+                    
+                    // Add a little delay before removal to prevent visual glitches
+                    setTimeout(() => {
+                        // The tree may have already been removed, so check first
+                        const treeIndex = this.trees.findIndex(t => t.id === tree.id);
+                        if (treeIndex >= 0) {
+                            console.log(`Fully removing chopped tree ${tree.id} (type: ${tree.type})`);
+                            
+                            // Mark tree as respawning so we know not to try to schedule again
+                            tree.isRespawning = true;
+                            
+                            // Create a ghost slot in the array that will be filled when respawn happens
+                            // This preserves array indices and prevents issues with concurrent updates
+                            this.trees[treeIndex] = {
+                                id: tree.id,
+                                isRespawnPlaceholder: true,
+                                respawnTime: tree.respawnTime,
+                                respawnStartTime: Date.now(),
+                                x: tree.x,
+                                y: tree.y,
+                                type: tree.type
+                            };
+                        }
+                    }, 500);
+                }
+            }
         }
+        
+        // Check respawn placeholders
+        this.checkTreeRespawns();
         
         // Check if it's time to spawn new trees
         const now = Date.now();
@@ -132,6 +197,32 @@ class TreeManager {
         
         // Check if we need to generate more trees around the player
         this.ensureTreesAroundPlayer();
+    }
+    
+    /**
+     * Check tree respawn placeholders and respawn trees if ready
+     */
+    checkTreeRespawns() {
+        const now = Date.now();
+        
+        for (let i = 0; i < this.trees.length; i++) {
+            const placeholder = this.trees[i];
+            
+            // If this is a respawn placeholder and time to respawn
+            if (placeholder && placeholder.isRespawnPlaceholder && 
+                now - placeholder.respawnStartTime >= placeholder.respawnTime) {
+                
+                console.log(`Respawning tree at (${placeholder.x}, ${placeholder.y})`);
+                
+                // Create a new tree of the same type at the same position
+                const treeCreator = this.treeTypes[placeholder.type] || this.treeTypes.oak;
+                const newTree = treeCreator(placeholder.x, placeholder.y);
+                newTree.id = placeholder.id; // Preserve the ID
+                
+                // Replace the placeholder with the new tree
+                this.trees[i] = newTree;
+            }
+        }
     }
     
     /**
@@ -212,6 +303,9 @@ class TreeManager {
     isValidSpawnPosition(x, y) {
         // Check distance to other trees
         for (const tree of this.trees) {
+            // Skip respawn placeholders
+            if (tree.isRespawnPlaceholder) continue;
+            
             const dx = tree.x - x;
             const dy = tree.y - y;
             const distance = Math.sqrt(dx * dx + dy * dy);
@@ -331,6 +425,9 @@ class TreeManager {
      */
     getTreeAt(x, y) {
         for (const tree of this.trees) {
+            // Skip respawn placeholders
+            if (tree.isRespawnPlaceholder) continue;
+            
             if (tree.containsPoint(x, y)) {
                 return tree;
             }
@@ -351,6 +448,9 @@ class TreeManager {
         const radiusSquared = radius * radius;
         
         for (const tree of this.trees) {
+            // Skip respawn placeholders
+            if (tree.isRespawnPlaceholder) continue;
+            
             const dx = tree.x - x;
             const dy = tree.y - y;
             const distanceSquared = dx * dx + dy * dy;
@@ -368,7 +468,8 @@ class TreeManager {
      * @returns {Array} - Array of all trees
      */
     getTrees() {
-        return this.trees;
+        // Filter out respawn placeholders
+        return this.trees.filter(tree => !tree.isRespawnPlaceholder);
     }
     
     /**
@@ -389,7 +490,10 @@ class TreeManager {
      * @param {number} cameraY - Camera Y position
      */
     draw(ctx, cameraX, cameraY) {
-        console.log(`Drawing ${this.trees.length} trees`);
+        // Only log this once in a while to reduce console spam
+        if (Math.random() < 0.01) {
+            console.log(`Drawing ${this.trees.length} trees`);
+        }
         
         if (this.trees.length === 0) {
             console.warn("No trees to draw! Trying to create some now...");
@@ -398,7 +502,11 @@ class TreeManager {
         }
         
         for (const tree of this.trees) {
-            if (tree.chopped) continue;
+            // Skip respawn placeholders
+            if (tree.isRespawnPlaceholder) continue;
+            
+            // Skip fully chopped trees
+            if (tree.chopped && !tree.isFalling) continue;
             
             const screenX = Math.floor(tree.x - cameraX);
             const screenY = Math.floor(tree.y - cameraY);

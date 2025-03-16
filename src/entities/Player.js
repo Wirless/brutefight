@@ -24,12 +24,13 @@ class Player {
         this.expToNextLevel = this.calculateExpToNextLevel();
         
         // Player stats
-        this.strength = options.strength || Math.max(1, Math.floor(this.level / 2));
-        this.defense = options.defense || Math.max(1, Math.floor(this.level / 3));
-        this.dexterity = options.dexterity || Math.max(1, Math.floor(this.level / 2.5));
-        this.agility = options.agility || Math.max(1, Math.floor(this.level / 3));
-        this.intelligence = options.intelligence || Math.max(1, Math.floor(this.level / 2.5));
-        this.luck = options.luck || Math.max(1, Math.floor(this.level / 4));
+        this.strength = options.strength || 1;
+        this.defense = options.defense || 1;
+        this.dexterity = options.dexterity || 1;
+        this.agility = options.agility || 1;
+        this.intelligence = options.intelligence || 1;
+        this.luck = options.luck || 1;
+        this.pickupStat = options.pickupStat || 1;
         
         // Player dimensions
         this.radius = options.radius || 20;
@@ -87,6 +88,9 @@ class Player {
         
         // Debug
         this.debug = false;
+        
+        // Calculate initial stats based on level
+        this.calculateStats();
     }
     
     /**
@@ -126,6 +130,8 @@ class Player {
         this.agility = Math.max(1, Math.floor(this.level / 3) + (this.level % 2));
         this.intelligence = Math.max(1, Math.floor(this.level / 2.5) + (this.level % 3));
         this.luck = Math.max(1, Math.floor(this.level / 4) + (this.level % 2));
+        // Calculate pickup stat based on level and luck
+        this.pickupStat = Math.max(1, Math.floor(this.level / 3) + this.luck / 2);
         
         // Apply equipment bonuses if equipment manager exists
         if (window.equipmentManager) {
@@ -145,6 +151,7 @@ class Player {
                     if (item.stats.agility) this.agility += item.stats.agility;
                     if (item.stats.intelligence) this.intelligence += item.stats.intelligence;
                     if (item.stats.luck) this.luck += item.stats.luck;
+                    if (item.stats.pickupStat) this.pickupStat += item.stats.pickupStat;
                 }
             }
         }
@@ -974,7 +981,8 @@ class Player {
             direction: this.animation.direction,
             frame: this.animation.frame,
             health: this.health,
-            maxHealth: this.maxHealth
+            maxHealth: this.maxHealth,
+            pickupStat: this.pickupStat
         };
     }
     
@@ -991,10 +999,30 @@ class Player {
         if (data.title !== undefined) this.title = data.title;
         if (data.health !== undefined) this.health = data.health;
         if (data.maxHealth !== undefined) this.maxHealth = data.maxHealth;
+        if (data.pickupStat !== undefined) this.pickupStat = data.pickupStat;
         
         // Update animation
         if (data.direction !== undefined) this.animation.direction = data.direction;
         if (data.frame !== undefined) this.animation.frame = data.frame;
+    }
+    
+    /**
+     * Update the player stats display in the UI
+     */
+    updateStatsDisplay() {
+        const statsContainer = document.getElementById('playerStats');
+        if (!statsContainer) return;
+        
+        // Update stats display
+        statsContainer.innerHTML = `
+            <div class="stat"><span class="stat-name">Strength:</span> <span class="stat-value">${this.strength}</span></div>
+            <div class="stat"><span class="stat-name">Defense:</span> <span class="stat-value">${this.defense}</span></div>
+            <div class="stat"><span class="stat-name">Dexterity:</span> <span class="stat-value">${this.dexterity}</span></div>
+            <div class="stat"><span class="stat-name">Agility:</span> <span class="stat-value">${this.agility}</span></div>
+            <div class="stat"><span class="stat-name">Intelligence:</span> <span class="stat-value">${this.intelligence}</span></div>
+            <div class="stat"><span class="stat-name">Luck:</span> <span class="stat-value">${this.luck}</span></div>
+            <div class="stat"><span class="stat-name">Pickup Range:</span> <span class="stat-value">${this.pickupStat}%</span></div>
+        `;
     }
 }
 

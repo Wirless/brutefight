@@ -584,7 +584,7 @@ class PickaxeAttack extends Attack {
                 }
                 
                 // Ore is hit! 
-                const destroyed = ore.hit ? ore.hit(damage) : false;
+                const destroyed = ore.hit ? ore.hit(damage, this.player) : false;
                 
                 // Add mining experience for hitting the rock
                 if (window.skillsManager) {
@@ -681,8 +681,12 @@ class PickaxeAttack extends Attack {
                     let treeDestroyed = false;
                     if (typeof tree.hit === 'function') {
                         treeDestroyed = tree.hit(damage, this.player);
+                        // Add random tree hit exp
+                        generateRandomTreeHitExp(tree, this.player);
                     } else if (tree.health !== undefined) {
                         tree.health -= damage;
+                        // Add random tree hit exp
+                        generateRandomTreeHitExp(tree, this.player);
                         if (tree.health <= 0) {
                             tree.health = 0;
                             treeDestroyed = true;
@@ -719,7 +723,7 @@ class PickaxeAttack extends Attack {
                     // If tree was destroyed, handle drops
                     if (treeDestroyed) {
                         console.log("Tree destroyed with pickaxe!");
-                        const drops = tree.getDrops ? tree.getDrops() : { experience: 5 };
+                        const drops = tree.getDrops ? tree.getDrops() : { experience: 10 };
                         
                         // Create experience orbs for tree destruction
                         if (this.createWoodExperienceOrbs) {
@@ -819,27 +823,29 @@ class PickaxeAttack extends Attack {
                 window.game.skillsManager.addExperience(skillType, totalExp);
             }
             
-            // Create experience orbs at node location
-            if (window.experienceOrbManager) {
-                window.experienceOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
-            } else if (window.expOrbManager) {
-                // Try with alternative manager name
-                if (typeof window.expOrbManager.createOrb === 'function') {
-                    // Create individual orbs in a burst pattern
-                    for (let i = 0; i < totalExp; i++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 10 + Math.random() * 20;
-                        const orbX = node.x + Math.cos(angle) * distance;
-                        const orbY = node.y + Math.sin(angle) * distance;
-                        window.expOrbManager.createOrb(orbX, orbY, 1);
-                    }
-                } else {
-                    window.expOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
+            // Get the experience orb manager
+            const manager = getExperienceOrbManager();
+            if (!manager) {
+                console.log(`No experience orb manager found to create ${skillType} orbs`);
+                return;
+            }
+            
+            // Try to create experience orbs
+            if (typeof manager.createExperienceOrbs === 'function') {
+                manager.createExperienceOrbs(node.x, node.y, totalExp);
+            } else if (typeof manager.createOrb === 'function') {
+                // Create individual orbs in a burst pattern
+                for (let i = 0; i < totalExp; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 10 + Math.random() * 20;
+                    const orbX = node.x + Math.cos(angle) * distance;
+                    const orbY = node.y + Math.sin(angle) * distance;
+                    manager.createOrb(orbX, orbY, 1);
                 }
-            } else if (window.ExperienceOrbManager) {
-                window.ExperienceOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
+            } else if (typeof manager.createOrbBurst === 'function') {
+                manager.createOrbBurst(node.x, node.y, totalExp, totalExp);
             } else {
-                console.error(`No experience orb manager found to create ${skillType} orbs`);
+                console.error(`Found manager but it has no suitable method to create ${skillType} orbs`);
             }
         } catch (error) {
             console.error(`Error creating ${skillType} experience orbs:`, error);
@@ -998,27 +1004,29 @@ class AxeAttack extends Attack {
                 window.game.skillsManager.addExperience(skillType, totalExp);
             }
             
-            // Create experience orbs at node location
-            if (window.experienceOrbManager) {
-                window.experienceOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
-            } else if (window.expOrbManager) {
-                // Try with alternative manager name
-                if (typeof window.expOrbManager.createOrb === 'function') {
-                    // Create individual orbs in a burst pattern
-                    for (let i = 0; i < totalExp; i++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 10 + Math.random() * 20;
-                        const orbX = node.x + Math.cos(angle) * distance;
-                        const orbY = node.y + Math.sin(angle) * distance;
-                        window.expOrbManager.createOrb(orbX, orbY, 1);
-                    }
-                } else {
-                    window.expOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
+            // Get the experience orb manager
+            const manager = getExperienceOrbManager();
+            if (!manager) {
+                console.log(`No experience orb manager found to create ${skillType} orbs`);
+                return;
+            }
+            
+            // Try to create experience orbs
+            if (typeof manager.createExperienceOrbs === 'function') {
+                manager.createExperienceOrbs(node.x, node.y, totalExp);
+            } else if (typeof manager.createOrb === 'function') {
+                // Create individual orbs in a burst pattern
+                for (let i = 0; i < totalExp; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 10 + Math.random() * 20;
+                    const orbX = node.x + Math.cos(angle) * distance;
+                    const orbY = node.y + Math.sin(angle) * distance;
+                    manager.createOrb(orbX, orbY, 1);
                 }
-            } else if (window.ExperienceOrbManager) {
-                window.ExperienceOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
+            } else if (typeof manager.createOrbBurst === 'function') {
+                manager.createOrbBurst(node.x, node.y, totalExp, totalExp);
             } else {
-                console.error(`No experience orb manager found to create ${skillType} orbs`);
+                console.error(`Found manager but it has no suitable method to create ${skillType} orbs`);
             }
         } catch (error) {
             console.error(`Error creating ${skillType} experience orbs:`, error);
@@ -1251,8 +1259,12 @@ class AxeAttack extends Attack {
                 let treeDestroyed = false;
                 if (typeof targetTree.hit === 'function') {
                         treeDestroyed = targetTree.hit(damage, this.player);
+                        // Add random tree hit exp
+                        generateRandomTreeHitExp(targetTree, this.player);
                 } else if (targetTree.health !== undefined) {
                     targetTree.health -= damage;
+                    // Add random tree hit exp
+                    generateRandomTreeHitExp(targetTree, this.player);
                     if (targetTree.health <= 0) {
                         targetTree.health = 0;
                         treeDestroyed = true;
@@ -1329,8 +1341,12 @@ class AxeAttack extends Attack {
                     // Apply damage to ore
                     if (typeof closestOre.hit === 'function') {
                         oreDestroyed = closestOre.hit(damage, player);
+                        // Add random ore hit exp
+                        generateRandomOreHitExp(closestOre, player);
                     } else if (closestOre.health !== undefined) {
                         closestOre.health -= damage;
+                        // Add random ore hit exp
+                        generateRandomOreHitExp(closestOre, player);
                         if (closestOre.health <= 0) {
                             closestOre.health = 0;
                             closestOre.broken = true; // Mark as broken when destroyed
@@ -1882,6 +1898,8 @@ class FistAttack extends Attack {
                 
                 if (ore.hit) {
                     oreDestroyed = ore.hit(damage, player);
+                    // Add random ore hit exp
+                    generateRandomOreHitExp(ore, player);
                 } else {
                     console.warn("Ore doesn't have a hit method:", ore);
                 }
@@ -1936,6 +1954,8 @@ class FistAttack extends Attack {
                 
                 if (ore.hit) {
                     oreDestroyed = ore.hit(damage, player);
+                    // Add random ore hit exp
+                    generateRandomOreHitExp(ore, player);
                 } else {
                     console.warn("Ore doesn't have a hit method:", ore);
                 }
@@ -2036,8 +2056,12 @@ class FistAttack extends Attack {
                 
                 if (typeof tree.hit === 'function') {
                     treeDestroyed = tree.hit(finalDamage, player);
+                    // Add random tree hit exp
+                    generateRandomTreeHitExp(tree, player);
                 } else if (tree.health !== undefined) {
                     tree.health -= finalDamage;
+                    // Add random tree hit exp
+                    generateRandomTreeHitExp(tree, player);
                     if (tree.health <= 0) {
                         tree.health = 0;
                         treeDestroyed = true;
@@ -2115,8 +2139,12 @@ class FistAttack extends Attack {
                 
                 if (typeof tree.hit === 'function') {
                     treeDestroyed = tree.hit(finalDamage, player);
+                    // Add random tree hit exp
+                    generateRandomTreeHitExp(tree, player);
                 } else if (tree.health !== undefined) {
                     tree.health -= finalDamage;
+                    // Add random tree hit exp
+                    generateRandomTreeHitExp(tree, player);
                     if (tree.health <= 0) {
                         tree.health = 0;
                         treeDestroyed = true;
@@ -2260,16 +2288,16 @@ class FistAttack extends Attack {
             // Add bonus exp for special ores if we have ore type information
             if (node.type) {
                 switch(node.type) {
-                case 'copper': totalExp += 10; break;
-                case 'iron': totalExp += 15; break;
-                case 'gold': totalExp += 25; break;
-                case 'diamond': totalExp += 40; break;
-                default: totalExp += 5; break;
+                    case 'copper': totalExp += 10; break;
+                    case 'iron': totalExp += 15; break;
+                    case 'gold': totalExp += 25; break;
+                    case 'diamond': totalExp += 40; break;
+                    default: totalExp += 5; break;
+                }
             }
-        }
-        
-        // Add randomness
-        totalExp += Math.floor(Math.random() * 5);
+            
+            // Add randomness
+            totalExp += Math.floor(Math.random() * 5);
         } else {
             // Default for other skill types
             totalExp = drops.experience || 5;
@@ -2285,27 +2313,29 @@ class FistAttack extends Attack {
                 window.game.skillsManager.addExperience(skillType, totalExp);
             }
             
-            // Create experience orbs at node location
-            if (window.experienceOrbManager) {
-                window.experienceOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
-            } else if (window.expOrbManager) {
-                // Try with alternative manager name
-                if (typeof window.expOrbManager.createOrb === 'function') {
-                    // Create individual orbs in a burst pattern
-                    for (let i = 0; i < totalExp; i++) {
-                        const angle = Math.random() * Math.PI * 2;
-                        const distance = 10 + Math.random() * 20;
-                        const orbX = node.x + Math.cos(angle) * distance;
-                        const orbY = node.y + Math.sin(angle) * distance;
-                        window.expOrbManager.createOrb(orbX, orbY, 1);
-                    }
-                } else {
-                    window.expOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
+            // Get the experience orb manager
+            const manager = getExperienceOrbManager();
+            if (!manager) {
+                console.log(`No experience orb manager found to create ${skillType} orbs`);
+                return;
+            }
+            
+            // Try to create experience orbs
+            if (typeof manager.createExperienceOrbs === 'function') {
+                manager.createExperienceOrbs(node.x, node.y, totalExp);
+            } else if (typeof manager.createOrb === 'function') {
+                // Create individual orbs in a burst pattern
+                for (let i = 0; i < totalExp; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 10 + Math.random() * 20;
+                    const orbX = node.x + Math.cos(angle) * distance;
+                    const orbY = node.y + Math.sin(angle) * distance;
+                    manager.createOrb(orbX, orbY, 1);
                 }
-            } else if (window.ExperienceOrbManager) {
-                window.ExperienceOrbManager.createExperienceOrbs(node.x, node.y, totalExp);
+            } else if (typeof manager.createOrbBurst === 'function') {
+                manager.createOrbBurst(node.x, node.y, totalExp, totalExp);
             } else {
-                console.error(`No experience orb manager found to create ${skillType} orbs`);
+                console.error(`Found manager but it has no suitable method to create ${skillType} orbs`);
             }
         } catch (error) {
             console.error(`Error creating ${skillType} experience orbs:`, error);
@@ -2416,4 +2446,91 @@ if (typeof window !== 'undefined') {
     window.addEventListener('mousedown', () => {
         setTimeout(cleanupBrokenRocks, 50);
     });
+}
+
+/**
+ * Get the experience orb manager from any source
+ * @returns {Object|null} - Experience orb manager if found, null otherwise
+ */
+function getExperienceOrbManager() {
+    if (window.game && window.game.expOrbManager) {
+        return window.game.expOrbManager;
+    } else if (window.expOrbManager) {
+        return window.expOrbManager;
+    } else if (window.ExperienceOrbManager) {
+        return window.ExperienceOrbManager;
+    } else if (window.experienceOrbManager) {
+        return window.experienceOrbManager;
+    } else if (window.Game && window.Game.expOrbManager) {
+        return window.Game.expOrbManager;
+    }
+    return null;
+}
+
+/**
+ * Generate random 1 XP orb for tree hits (1 in 10 chance)
+ * @param {Object} tree - Tree object
+ * @param {Object} player - Player object
+ */
+function generateRandomTreeHitExp(tree, player) {
+    // 1 in 10 chance to drop a small experience orb
+    if (Math.random() < 0.1) {
+        try {
+            // Get the experience orb manager
+            const manager = getExperienceOrbManager();
+            if (!manager) {
+                console.log("Could not find any experience orb manager to create woodcutting orbs");
+                return;
+            }
+            
+            // Position with small random offset
+            const x = tree.x + (Math.random() - 0.5) * 20;
+            const y = tree.y + (Math.random() - 0.5) * 20;
+            
+            // Try to create the orb
+            if (typeof manager.createExpOrb === 'function') {
+                manager.createExpOrb(x, y, 1, { skillType: 'woodcutting' });
+            } else if (typeof manager.createOrb === 'function') {
+                manager.createOrb(x, y, 1);
+            } else {
+                console.log("Found manager but it has no suitable create method");
+            }
+        } catch (error) {
+            console.error("Error creating random woodcutting experience orb:", error);
+        }
+    }
+}
+
+/**
+ * Generate random 1 XP orb for ore hits (1 in 20 chance)
+ * @param {Object} ore - Ore object
+ * @param {Object} player - Player object
+ */
+function generateRandomOreHitExp(ore, player) {
+    // 1 in 20 chance to drop a small experience orb
+    if (Math.random() < 0.05) {
+        try {
+            // Get the experience orb manager
+            const manager = getExperienceOrbManager();
+            if (!manager) {
+                console.log("Could not find any experience orb manager to create mining orbs");
+                return;
+            }
+            
+            // Position with small random offset
+            const x = ore.x + (Math.random() - 0.5) * 20;
+            const y = ore.y + (Math.random() - 0.5) * 20;
+            
+            // Try to create the orb
+            if (typeof manager.createExpOrb === 'function') {
+                manager.createExpOrb(x, y, 1, { skillType: 'mining' });
+            } else if (typeof manager.createOrb === 'function') {
+                manager.createOrb(x, y, 1);
+            } else {
+                console.log("Found manager but it has no suitable create method");
+            }
+        } catch (error) {
+            console.error("Error creating random mining experience orb:", error);
+        }
+    }
 }

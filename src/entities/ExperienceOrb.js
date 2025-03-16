@@ -10,74 +10,134 @@ class ExperienceOrb {
      */
     constructor(options = {}) {
         // Core properties
-        this.id = options.id || `xp_${Math.floor(Math.random() * 1000000)}`;
+        this.id = options.id || generateOrbId(); // Unique ID for network synchronization
         this.x = options.x || 0;
         this.y = options.y || 0;
-        this.value = options.value || 5;
+        this.value = options.value || 1;
+        this.skillType = options.skillType || 'default';
         
-        // Appearance
-        // Make 1 XP orbs smaller to emphasize growth when merging
-        if (this.value <= 1) {
-            this.size = Math.max(3, Math.min(5, Math.sqrt(this.value) * 2));
-        } else {
-            this.size = Math.max(5, Math.min(15, Math.sqrt(this.value) * 2));
-        }
-        this.baseColor = options.color || '#3498db';
-        this.glowColor = options.glowColor || '#85c0f9';
-        this.pulseSpeed = options.pulseSpeed || 0.003;
-        this.rotationSpeed = options.rotationSpeed || 0.001;
-        this.renderStyle = options.renderStyle || 'modern'; // 'modern' or 'classic'
+        // Network synchronization
+        this.syncedToNetwork = false;
+        this.lastSyncTime = 0;
+        this.syncInterval = 200; // Sync every 200ms
         
-        // Physics
-        this.vx = options.vx || 0;
-        this.vy = options.vy || 0;
-        this.maxSpeed = options.maxSpeed || 5;
+        // Movement & physics
+        this.vx = options.vx || (Math.random() - 0.5) * 2;
+        this.vy = options.vy || (Math.random() - 0.5) * 2 - 2; // Initial upward momentum
+        this.gravity = options.gravity || 0.05;
         this.friction = options.friction || 0.98;
-        this.gravity = options.gravity || 0.1;
-        this.bounce = options.bounce || 0.6;
+        this.bounce = options.bounce || 0.5;
+        this.groundY = options.groundY || null; // Optional ground level
         
-        // State
-        this.isCollected = false;
-        this.collectTime = 0;
-        this.collectDuration = 500; // ms
-        this.lifeDuration = options.lifeDuration || 30000; // 30 seconds
-        this.createdAt = Date.now();
-        this.expireTime = this.createdAt + this.lifeDuration;
-        this.magnetized = false;
-        this.magnetTarget = null;
-        this.magnetRange = options.magnetRange || 150;
-        this.magnetForce = options.magnetForce || 0.5;
+        // Pickup & collection
+        this.collected = false;
+        this.isMagnetized = false;
+        this.magnetizationSpeed = options.magnetizationSpeed || 0.3;
+        this.basePickupRadius = options.basePickupRadius || 10; // Reduced to 10px (will be affected by player's pickup stat)
+        this.targetPlayer = null;
         
         // Animation
-        this.animationOffset = Math.random() * Math.PI * 2;
+        this.createdAt = Date.now();
+        this.lifetime = options.lifetime || 30000; // 30 seconds
+        this.pulseSpeed = options.pulseSpeed || 0.005;
+        this.pulseAmount = options.pulseAmount || 0.2;
+        this.rotationSpeed = options.rotationSpeed || 0.02;
         this.rotation = Math.random() * Math.PI * 2;
-        this.scale = 1.0;
-        this.alpha = 1.0;
+        this.scale = options.scale || 1;
+        this.glow = options.glow !== undefined ? options.glow : true;
         
-        // Fuzzy particles
+        // Visual style
+        this.visualStyle = options.visualStyle || 'modern';
+        this.color = options.color || this.getColorForSkill(this.skillType);
+        this.size = options.size || this.getSizeForValue(this.value);
+        this.opacity = 1.0;
+        this.blendMode = options.blendMode || 'source-over';
+        
+        // Particle effects
+        this.fuzzyParticlesEnabled = options.fuzzyParticlesEnabled !== undefined ? 
+            options.fuzzyParticlesEnabled : true;
         this.fuzzyParticles = [];
-        this.fuzzyParticleCount = options.fuzzyParticleCount || Math.floor(5 + (this.value / 10));
-        this.lastFuzzyParticleTime = Date.now();
-        this.fuzzyParticleInterval = options.fuzzyParticleInterval || 100;
-        this.fuzzyParticlesEnabled = options.fuzzyParticlesEnabled !== undefined ? options.fuzzyParticlesEnabled : true;
-        this.initFuzzyParticles();
+        this.trailParticles = [];
         
-        // Classic style properties
-        if (this.renderStyle === 'classic') {
-            const greenIntensity = Math.min(255, 200 + (this.value * 5));
-            this.baseColor = `rgb(0, ${greenIntensity}, 100)`;
-            this.glowColor = `rgba(0, 255, 100, 0.5)`;
-            this.particles = [];
-            this.lastParticleTime = 0;
-            this.particleInterval = 100 + Math.random() * 100;
+        // Initialize fuzzy particles if enabled
+        if (this.fuzzyParticlesEnabled) {
+            this.initFuzzyParticles();
+        }
+    }
+    
+    /**
+     * Generate a unique ID for experience orbs
+     * @returns {string} - Unique ID
+     */
+    generateOrbId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    }
+    
+    /**
+     * Calculate effective pickup radius based on player's pickup stat
+     * @param {Object} player - Player object
+     * @returns {number} - Effective pickup radius
+     */
+    calculatePickupRadius(player) {
+        // Default if no player or no pickupStat defined
+        if (!player || typeof player.pickupStat !== 'number') {
+            return this.basePickupRadius;
         }
         
-        // Generate initial velocity in random direction
-        if (options.randomVelocity !== false) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 1 + Math.random() * 3;
-            this.vx = Math.cos(angle) * speed;
-            this.vy = Math.sin(angle) * speed;
+        // Calculate pickup radius: base 10px plus percentage from player's pickup stat
+        // If pickup stat is 20, then increase radius by 20%
+        return this.basePickupRadius * (1 + (player.pickupStat / 100));
+    }
+    
+    /**
+     * Check if the experience orb should be magnetized to the player
+     * @param {Array} players - Array of players to check
+     */
+    checkMagnetization(players) {
+        // If already collected, don't change magnetization
+        if (this.collected) return;
+        
+        // If already magnetized to a player, maintain that magnetization
+        if (this.isMagnetized && this.targetPlayer) {
+            // Check if target player is still close enough to maintain magnetization
+            const dx = this.targetPlayer.x - this.x;
+            const dy = this.targetPlayer.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // If player has moved too far away, release magnetization
+            // Use a slightly larger range (1.5x) to avoid flickering
+            const effectiveRadius = this.calculatePickupRadius(this.targetPlayer);
+            if (distance > effectiveRadius * 1.5) {
+                this.isMagnetized = false;
+                this.targetPlayer = null;
+            }
+            return;
+        }
+        
+        // Check all players in the array
+        let closestPlayer = null;
+        let closestDistance = Infinity;
+        
+        for (const player of players) {
+            // Skip players that don't exist
+            if (!player) continue;
+            
+            const dx = player.x - this.x;
+            const dy = player.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const effectiveRadius = this.calculatePickupRadius(player);
+            
+            // Check if player is within pickup radius - STRICT enforcement
+            if (distance <= effectiveRadius && distance < closestDistance) {
+                closestPlayer = player;
+                closestDistance = distance;
+            }
+        }
+        
+        // Magnetize to the closest player if any is in range
+        if (closestPlayer) {
+            this.isMagnetized = true;
+            this.targetPlayer = closestPlayer;
         }
     }
     
@@ -87,60 +147,80 @@ class ExperienceOrb {
      * @param {Array} players - Array of players to check for magnetization
      */
     update(deltaTime, players = []) {
-        const now = Date.now();
+        // Skip update if collected
+        if (this.collected) return false;
         
-        // Check if collected
-        if (this.isCollected) {
-            const collectProgress = (now - this.collectTime) / this.collectDuration;
-            if (collectProgress >= 1) {
-                return true; // Fully collected, should be removed
+        // Check lifecycle
+        const age = Date.now() - this.createdAt;
+        if (age > this.lifetime) {
+            // Fade out in the last second
+            const fadeAge = this.lifetime - 1000;
+            if (age > fadeAge) {
+                this.opacity = 1 - (age - fadeAge) / 1000;
             }
             
-            // Animate collection
-            this.scale = 1 - collectProgress;
-            this.alpha = 1 - collectProgress;
+            // Remove when completely faded
+            if (this.opacity <= 0) {
+                return true; // Signal for removal
+            }
+        }
+        
+        // Update network synchronization
+        this.updateNetworkSync();
+        
+        // Check for magnetization to any player
+        this.checkMagnetization(players);
+        
+        // Update physics and movement
+        if (this.isMagnetized && this.targetPlayer) {
+            // Move towards the player
+            const dx = this.targetPlayer.x - this.x;
+            const dy = this.targetPlayer.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // If using classic style, create particles on collection
-            if (this.renderStyle === 'classic' && this.particles) {
-                this.createCollectionParticles();
+            if (distance > 0) {
+                // Accelerate towards player with increasing speed as it gets closer
+                const speed = this.magnetizationSpeed * (1 + (50 / Math.max(1, distance)));
+                this.vx = (dx / distance) * speed;
+                this.vy = (dy / distance) * speed;
             }
             
-            return false;
-        }
-        
-        // Check if expired
-        if (now > this.expireTime) {
-            // Fade out
-            const fadeTime = 1000; // 1 second fade
-            const fadeProgress = Math.min(1, (now - (this.expireTime - fadeTime)) / fadeTime);
-            
-            if (fadeProgress >= 1) {
-                return true; // Fully faded, should be removed
+            // Check for collection
+            if (distance < 20) { // Collection happens when very close
+                this.collect(this.targetPlayer);
+                return true; // Signal for removal
             }
-            
-            this.alpha = 1 - fadeProgress;
+        } else {
+            // Normal physics when not magnetized
+            this.updatePhysics(deltaTime);
         }
-        
-        // Check for magnetization to players
-        if (!this.magnetized) {
-            this.checkMagnetization(players);
-        }
-        
-        // Update physics
-        this.updatePhysics(deltaTime);
         
         // Update animation
         this.updateAnimation(deltaTime);
         
-        // Update classic style particles if needed
-        if (this.renderStyle === 'classic' && this.particles) {
-            this.updateClassicParticles(deltaTime);
+        // Update particle effects
+        if (this.fuzzyParticlesEnabled) {
+            this.updateFuzzyParticles(deltaTime);
         }
         
-        // Update fuzzy particles
-        this.updateFuzzyParticles(deltaTime);
+        // Update trail particles
+        for (let i = this.trailParticles.length - 1; i >= 0; i--) {
+            const particle = this.trailParticles[i];
+            particle.life -= deltaTime;
+            
+            if (particle.life <= 0) {
+                this.trailParticles.splice(i, 1);
+            } else {
+                particle.opacity = particle.life / particle.maxLife;
+            }
+        }
         
-        return false; // Not ready to be removed
+        // Occasionally create trail particles when moving quickly
+        if (Math.random() < 0.1 && (Math.abs(this.vx) > 0.5 || Math.abs(this.vy) > 0.5)) {
+            this.createTrailParticle();
+        }
+        
+        return false; // Don't remove
     }
     
     /**
@@ -148,38 +228,12 @@ class ExperienceOrb {
      * @param {number} deltaTime - Time elapsed since last update
      */
     updatePhysics(deltaTime) {
-        // If magnetized, move towards target
-        if (this.magnetized && this.magnetTarget) {
-            const dx = this.magnetTarget.x - this.x;
-            const dy = this.magnetTarget.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            if (distance < 10) {
-                // Close enough to collect
-                this.collect(this.magnetTarget);
-                return;
-            }
-            
-            // Move towards player with increasing force as it gets closer
-            const force = this.magnetForce * (1 + (this.magnetRange - distance) / this.magnetRange);
-            
-            this.vx += dx / distance * force;
-            this.vy += dy / distance * force;
-        } else {
-            // Apply gravity
-            this.vy += this.gravity * deltaTime;
-        }
+        // Apply gravity
+        this.vy += this.gravity * deltaTime;
         
         // Apply friction
         this.vx *= this.friction;
         this.vy *= this.friction;
-        
-        // Limit speed
-        const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-        if (speed > this.maxSpeed) {
-            this.vx = (this.vx / speed) * this.maxSpeed;
-            this.vy = (this.vy / speed) * this.maxSpeed;
-        }
         
         // Update position
         this.x += this.vx * deltaTime;
@@ -219,54 +273,82 @@ class ExperienceOrb {
     }
     
     /**
-     * Check if orb should be magnetized to any player
-     * @param {Array} players - Array of players to check
+     * Collect the orb by a player
+     * @param {Object} player - Player that collects the orb
      */
-    checkMagnetization(players) {
-        for (const player of players) {
-            if (!player.isCurrentPlayer) continue; // Only magnetize to current player
-            
-            const dx = player.x - this.x;
-            const dy = player.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            if (distance < this.magnetRange) {
-                this.magnetized = true;
-                this.magnetTarget = player;
-                break;
-            }
+    collect(player) {
+        if (this.collected) return;
+        
+        this.collected = true;
+        
+        // Create collection particles
+        this.createCollectionParticles();
+        
+        // Apply experience to player
+        if (player && typeof player.addExperience === 'function') {
+            player.addExperience(this.value);
+        }
+        
+        // Play collection sound
+        this.playCollectionSound();
+        
+        // Notify server of collection if this is networked
+        if (window.socket && window.socket.connected) {
+            window.socket.emit('collectExpOrb', {
+                orbId: this.id,
+                playerId: player.id,
+                value: this.value
+            });
         }
     }
     
     /**
-     * Collect the orb
-     * @param {Object} player - Player collecting the orb
+     * Play sound when the orb is collected
      */
-    collect(player) {
-        if (this.isCollected) return;
-        
-        this.isCollected = true;
-        this.collectTime = Date.now();
-        
-        // Don't directly add experience to player anymore
-        // Experience will be added by ExperienceOrbManager on full collection
-        
-        // Play sound if available
+    playCollectionSound() {
         try {
-            if (window.game && window.game.assetLoader) {
-                const isLargeAmount = this.value >= 10;
-                window.game.assetLoader.playSound(isLargeAmount ? 'levelUp' : 'expPickup', 0.3);
-            } else if (window.audioContext) {
-                // Try to play sound directly if assetLoader is not available
-                const isLargeAmount = this.value >= 10;
-                const soundName = isLargeAmount ? 'sounds/levelup.mp3' : 'sounds/collect.mp3';
-                const sound = window.soundsCache && window.soundsCache[soundName] ? 
-                    window.soundsCache[soundName].cloneNode() : new Audio(soundName);
-                sound.volume = 0.3;
+            // Volume and pitch based on value
+            const volume = Math.min(0.6, 0.3 + (this.value / 100) * 0.3);
+            const pitch = Math.min(1.5, 0.8 + (this.value / 100) * 0.7);
+            
+            // Try to use global sound manager if available
+            if (window.audioManager && window.audioManager.playSound) {
+                window.audioManager.playSound('exp_collect', volume, pitch);
+            } else {
+                // Fallback to basic Audio API
+                const sound = new Audio('./sounds/exp_collect.mp3');
+                sound.volume = volume;
+                sound.playbackRate = pitch;
                 sound.play().catch(err => console.log('Sound play failed:', err));
             }
         } catch (error) {
-            console.error("Error playing sound:", error);
+            console.error("Error playing collection sound:", error);
+        }
+    }
+    
+    /**
+     * Create particles for collection effect
+     */
+    createCollectionParticles() {
+        // Add collection particles
+        for (let i = 0; i < 8; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 2;
+            const size = 2 + Math.random() * 3;
+            
+            if (!this.trailParticles) this.trailParticles = [];
+            
+            this.trailParticles.push({
+                x: this.x,
+                y: this.y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: size,
+                color: this.color,
+                opacity: 0.8,
+                life: 300 + Math.random() * 200,
+                maxLife: 500
+            });
         }
     }
     
@@ -276,7 +358,7 @@ class ExperienceOrb {
      * @returns {boolean} - Whether there is a collision
      */
     checkCollision(player) {
-        if (this.isCollected) return false;
+        if (this.collected) return false;
         
         const dx = player.x - this.x;
         const dy = player.y - this.y;
@@ -292,7 +374,7 @@ class ExperienceOrb {
      * @param {number} cameraY - Camera Y position
      */
     draw(ctx, cameraX, cameraY) {
-        if (this.isCollected && this.alpha <= 0) return;
+        if (this.collected && this.opacity <= 0) return;
         
         // Convert world coordinates to screen coordinates
         const screenX = this.x - Math.floor(cameraX);
@@ -304,7 +386,7 @@ class ExperienceOrb {
             return;
         }
         
-        if (this.renderStyle === 'classic') {
+        if (this.visualStyle === 'classic') {
             this.drawClassicStyle(ctx, screenX, screenY);
         } else {
             this.drawModernStyle(ctx, screenX, screenY);
@@ -325,7 +407,7 @@ class ExperienceOrb {
         ctx.save();
         
         // Apply alpha for fade effects
-        ctx.globalAlpha = this.alpha;
+        ctx.globalAlpha = this.opacity;
         
         // Apply scale
         ctx.translate(screenX, screenY);
@@ -356,7 +438,7 @@ class ExperienceOrb {
         ctx.fill();
         
         // Draw inner orb
-        ctx.fillStyle = this.baseColor;
+        ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(0, 0, this.size * (0.8 + pulse * 0.2), 0, Math.PI * 2);
         ctx.fill();
@@ -415,7 +497,7 @@ class ExperienceOrb {
         }
         
         // Reset alpha
-        ctx.globalAlpha = this.alpha;
+        ctx.globalAlpha = this.opacity;
         
         // Draw glow
         ctx.beginPath();
@@ -425,13 +507,13 @@ class ExperienceOrb {
             screenX, screenY, this.size,
             screenX, screenY, this.size + glowSize
         );
-        gradient.addColorStop(0, `rgba(0, 255, 100, ${this.alpha})`);
+        gradient.addColorStop(0, `rgba(0, 255, 100, ${this.opacity})`);
         gradient.addColorStop(1, 'rgba(0, 255, 100, 0)');
         ctx.fillStyle = gradient;
         ctx.fill();
         
         // Draw orb
-        ctx.fillStyle = this.baseColor;
+        ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(screenX, screenY, this.size, 0, Math.PI * 2);
         ctx.fill();
@@ -469,75 +551,6 @@ class ExperienceOrb {
     }
     
     /**
-     * Update classic style particles
-     * @param {number} deltaTime - Time elapsed since last update
-     */
-    updateClassicParticles(deltaTime) {
-        // Create trail particles occasionally
-        const now = Date.now();
-        if (now - this.lastParticleTime > this.particleInterval) {
-            this.createTrailParticle();
-            this.lastParticleTime = now;
-        }
-        
-        // Update existing particles
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const particle = this.particles[i];
-            particle.life -= deltaTime;
-            
-            if (particle.life <= 0) {
-                this.particles.splice(i, 1);
-                continue;
-            }
-            
-            // Move particle
-            particle.x += particle.vx * (deltaTime / 16);
-            particle.y += particle.vy * (deltaTime / 16);
-            
-            // Fade out
-            particle.opacity = particle.life / particle.maxLife;
-        }
-    }
-    
-    /**
-     * Create a trail particle for classic style
-     */
-    createTrailParticle() {
-        this.particles.push({
-            x: this.x,
-            y: this.y,
-            vx: (Math.random() - 0.5) * 0.5,
-            vy: (Math.random() - 0.5) * 0.5,
-            radius: 1 + Math.random() * 2,
-            color: 'rgb(0, 255, 100)',
-            opacity: 0.7,
-            life: 300 + Math.random() * 200,
-            maxLife: 500
-        });
-    }
-    
-    /**
-     * Create particle burst on collection for classic style
-     */
-    createCollectionParticles() {
-        // Create particle burst when collected
-        for (let i = 0; i < 8; i++) {
-            const angle = (i / 8) * Math.PI * 2;
-            this.particles.push({
-                x: this.x,
-                y: this.y,
-                vx: Math.cos(angle) * 2,
-                vy: Math.sin(angle) * 2,
-                radius: 2 + Math.random() * 2,
-                color: 'rgb(0, 255, 100)',
-                opacity: 1,
-                life: 300 + Math.random() * 200,
-                maxLife: 500
-            });
-        }
-    }
-    
-    /**
      * Initialize fuzzy particles
      */
     initFuzzyParticles() {
@@ -572,14 +585,14 @@ class ExperienceOrb {
         };
         
         // Add color based on orb style
-        if (this.renderStyle === 'classic') {
+        if (this.visualStyle === 'classic') {
             const green = Math.min(255, Math.floor(200 + Math.random() * 55));
             particle.color = `rgba(100, ${green}, 120, ${particle.alpha})`;
         } else {
             // For modern style, derive from the orb's base color
-            const baseColor = this.baseColor.startsWith('#') ? 
-                this.baseColor : 
-                this.baseColor || '#3498db';
+            const baseColor = this.color.startsWith('#') ? 
+                this.color : 
+                this.color || '#3498db';
                 
             // Slightly vary the particle color from the base
             const r = parseInt(baseColor.substring(1, 3), 16);
@@ -656,7 +669,7 @@ class ExperienceOrb {
             const particleX = screenX + particle.offsetX;
             const particleY = screenY + particle.offsetY;
             
-            ctx.globalAlpha = particle.alpha * this.alpha; // Apply orb alpha to particles
+            ctx.globalAlpha = particle.alpha * this.opacity; // Apply orb opacity to particles
             ctx.fillStyle = particle.color;
             
             // Draw the particle
@@ -692,6 +705,81 @@ class ExperienceOrb {
         
         console.log(`Experience orb fuzzy particles ${enabled ? 'enabled' : 'disabled'}`);
     }
+    
+    // Update network synchronization
+    updateNetworkSync() {
+        const now = Date.now();
+        
+        // Only sync at intervals to reduce network traffic
+        if (now - this.lastSyncTime > this.syncInterval) {
+            this.lastSyncTime = now;
+            
+            // If we have a socket connection and the orb is not yet synced or has moved significantly
+            if (window.socket && window.socket.connected) {
+                // Send orb data to server
+                window.socket.emit('syncExpOrb', {
+                    id: this.id,
+                    x: this.x,
+                    y: this.y,
+                    vx: this.vx,
+                    vy: this.vy,
+                    value: this.value,
+                    skillType: this.skillType,
+                    collected: this.collected
+                });
+                
+                this.syncedToNetwork = true;
+            }
+        }
+    }
+
+    /**
+     * Create a trail particle
+     */
+    createTrailParticle() {
+        this.trailParticles.push({
+            x: this.x,
+            y: this.y,
+            vx: (Math.random() - 0.5) * 0.5,
+            vy: (Math.random() - 0.5) * 0.5,
+            size: 1 + Math.random() * 2,
+            color: this.color,
+            opacity: 0.7,
+            life: 300 + Math.random() * 200,
+            maxLife: 500
+        });
+    }
+
+    /**
+     * Get color for skill type
+     * @param {string} skillType - Type of skill 
+     * @returns {string} - Color for the skill
+     */
+    getColorForSkill(skillType) {
+        const skillColors = {
+            'default': '#3498db',
+            'mining': '#cd7f32',
+            'woodcutting': '#228B22',
+            'combat': '#ff0000',
+            'fishing': '#1e90ff'
+        };
+        
+        return skillColors[skillType] || skillColors.default;
+    }
+
+    /**
+     * Get size based on value
+     * @param {number} value - XP value
+     * @returns {number} - Size for the orb
+     */
+    getSizeForValue(value) {
+        // Make orbs scale with value, but not linearly
+        if (value <= 1) {
+            return Math.max(3, Math.min(5, Math.sqrt(value) * 2));
+        } else {
+            return Math.max(5, Math.min(15, Math.sqrt(value) * 2));
+        }
+    }
 }
 
 /**
@@ -706,110 +794,244 @@ class ExperienceOrbManager {
      */
     constructor(game, options = {}) {
         this.game = game;
-        this.orbs = [];
+        this.orbs = new Map(); // Use a Map with ID as key for efficient lookup
+        this.options = Object.assign({
+            maxOrbs: 200,
+            visualStyle: 'modern',
+            fuzzyParticlesEnabled: true,
+            mergeSimilarOrbs: true,
+            magnetizationEnabled: true
+        }, options);
         
-        // Visual style options
-        this.defaultRenderStyle = options.renderStyle || 'modern'; // 'modern' or 'classic'
+        // Handle incoming network orb sync
+        this.setupNetworkListeners();
         
-        // Make globally available
-        window.expOrbManager = this;
+        this.init();
     }
     
     /**
      * Initialize the manager
-     * @returns {ExperienceOrbManager} - This instance for chaining
      */
     init() {
-        return this;
+        console.log("Experience Orb Manager initialized");
+        
+        // Set visual style from saved preferences if available
+        if (window.localStorage) {
+            const savedStyle = localStorage.getItem('expOrbStyle');
+            if (savedStyle) {
+                this.setVisualStyle(savedStyle);
+            }
+            
+            const fuzzyParticles = localStorage.getItem('fuzzyParticlesEnabled');
+            if (fuzzyParticles !== null) {
+                this.setFuzzyParticlesEnabled(fuzzyParticles === 'true');
+            }
+        }
     }
     
     /**
-     * Create a new experience orb
+     * Setup network event listeners for syncing orbs
+     */
+    setupNetworkListeners() {
+        if (window.socket) {
+            // Listen for experience orb updates from the server
+            window.socket.on('expOrbUpdate', (orbData) => {
+                this.handleOrbUpdate(orbData);
+            });
+            
+            // Listen for orb collection events from other players
+            window.socket.on('expOrbCollected', (data) => {
+                this.handleOrbCollected(data);
+            });
+        }
+    }
+    
+    /**
+     * Handle orb update from network
+     * @param {Object} orbData - Orb data from server
+     */
+    handleOrbUpdate(orbData) {
+        // Check if we have this orb already
+        if (this.orbs.has(orbData.id)) {
+            // Update existing orb
+            const orb = this.orbs.get(orbData.id);
+            
+            // Don't update if the orb is already collected
+            if (orb.collected) return;
+            
+            // Mark as collected if server says it's collected
+            if (orbData.collected) {
+                orb.collected = true;
+                return;
+            }
+            
+            // Update position and velocity if not magnetized to local player
+            if (!orb.isMagnetized) {
+                orb.x = orbData.x;
+                orb.y = orbData.y;
+                orb.vx = orbData.vx;
+                orb.vy = orbData.vy;
+            }
+        } else {
+            // Create new orb if it's not collected
+            if (!orbData.collected) {
+                this.createExpOrb(
+                    orbData.x, 
+                    orbData.y, 
+                    orbData.value, 
+                    {
+                        id: orbData.id,
+                        skillType: orbData.skillType,
+                        syncedToNetwork: true
+                    }
+                );
+            }
+        }
+    }
+    
+    /**
+     * Handle orb collected by another player
+     * @param {Object} data - Collection data
+     */
+    handleOrbCollected(data) {
+        if (this.orbs.has(data.orbId)) {
+            const orb = this.orbs.get(data.orbId);
+            
+            // Mark as collected
+            orb.collected = true;
+            
+            // Create collection effect
+            if (orb.createCollectionParticles) {
+                orb.createCollectionParticles();
+            }
+            
+            // Play sound if nearby
+            if (this.game && this.game.myPlayer) {
+                const dx = this.game.myPlayer.x - orb.x;
+                const dy = this.game.myPlayer.y - orb.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < 500) {
+                    this.playCollectionSound(orb.value);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Create an experience orb
      * @param {number} x - X position
      * @param {number} y - Y position
-     * @param {number} value - Experience value
-     * @param {Object} options - Additional options
+     * @param {number} value - XP value
+     * @param {Object} options - Orb options
      * @returns {ExperienceOrb} - The created orb
      */
     createExpOrb(x, y, value = 5, options = {}) {
-        const orb = new ExperienceOrb({
-            x: x,
-            y: y,
-            value: value,
-            renderStyle: options.renderStyle || this.defaultRenderStyle,
-            ...options
+        // Ensure we don't exceed the maximum number of orbs
+        if (this.orbs.size >= this.options.maxOrbs) {
+            // Remove the oldest orb
+            const oldest = this.orbs.keys().next().value;
+            this.orbs.delete(oldest);
+        }
+        
+        // Apply manager settings to orb options
+        const orbOptions = Object.assign({}, options, {
+            visualStyle: this.options.visualStyle,
+            fuzzyParticlesEnabled: this.options.fuzzyParticlesEnabled,
+            value: value
         });
         
-        this.orbs.push(orb);
+        // Create the orb
+        const orb = new ExperienceOrb(Object.assign({ x, y }, orbOptions));
+        
+        // Add to orbs map
+        this.orbs.set(orb.id, orb);
+        
+        // Sync to network if socket is available
+        if (window.socket && window.socket.connected && !orb.syncedToNetwork) {
+            window.socket.emit('createExpOrb', {
+                id: orb.id,
+                x: orb.x,
+                y: orb.y,
+                value: orb.value,
+                skillType: orb.skillType || 'default'
+            });
+            
+            orb.syncedToNetwork = true;
+        }
+        
         return orb;
     }
     
     /**
-     * Toggle the visual style of all orbs
+     * Set the visual style for all orbs
      * @param {string} style - 'modern' or 'classic'
      */
     setVisualStyle(style) {
         if (style !== 'modern' && style !== 'classic') {
-            console.error(`Invalid style: ${style}. Must be 'modern' or 'classic'`);
+            console.error(`Invalid experience orb style: ${style}`);
             return;
         }
         
-        this.defaultRenderStyle = style;
+        this.options.visualStyle = style;
         
-        // Update existing orbs
-        for (const orb of this.orbs) {
-            orb.renderStyle = style;
-            
-            // Initialize classic style properties if needed
-            if (style === 'classic' && !orb.particles) {
-                const greenIntensity = Math.min(255, 200 + (orb.value * 5));
-                orb.baseColor = `rgb(0, ${greenIntensity}, 100)`;
-                orb.glowColor = `rgba(0, 255, 100, 0.5)`;
-                orb.particles = [];
-                orb.lastParticleTime = 0;
-                orb.particleInterval = 100 + Math.random() * 100;
-            }
+        // Update all existing orbs
+        this.orbs.forEach(orb => {
+            orb.visualStyle = style;
+        });
+        
+        // Save preference
+        if (window.localStorage) {
+            localStorage.setItem('expOrbStyle', style);
         }
         
-        console.log(`Experience orb visual style set to: ${style}`);
+        console.log(`Experience orb style set to: ${style}`);
     }
     
     /**
-     * Create multiple experience orbs
-     * @param {number} x - Center X position
-     * @param {number} y - Center Y position
-     * @param {number} totalValue - Total experience value
+     * Create a burst of experience orbs
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     * @param {number} totalValue - Total XP value
      * @param {number} count - Number of orbs to create
-     * @param {Object} options - Additional options
+     * @param {Object} options - Orb options
      * @returns {Array} - Array of created orbs
      */
     createExpOrbBurst(x, y, totalValue, count = 3, options = {}) {
-        const orbs = [];
+        const createdOrbs = [];
         
-        // Create one orb per experience point
-        const orbCount = Math.max(1, totalValue);
+        // Don't create empty orbs
+        if (totalValue <= 0) return createdOrbs;
         
-        for (let i = 0; i < orbCount; i++) {
-            // Create orb with random offset in a burst pattern
-            const angle = Math.random() * Math.PI * 2;
-            const distance = 5 + Math.random() * 20;
-            const orbX = x + Math.cos(angle) * distance;
-            const orbY = y + Math.sin(angle) * distance;
+        // Make sure count is reasonable
+        count = Math.min(Math.max(1, count), 10);
+        
+        // Distribute value among orbs
+        let remaining = totalValue;
+        for (let i = 0; i < count; i++) {
+            // For the last orb, just use remaining value
+            let orbValue;
+            if (i === count - 1) {
+                orbValue = remaining;
+            } else {
+                // Randomly distribute, but ensure minimum of 1
+                orbValue = Math.max(1, Math.floor(remaining * (0.1 + Math.random() * 0.4)));
+            }
             
-            // Create with 1 XP and random initial velocity
-            const orb = this.createExpOrb(orbX, orbY, 1, {
-                randomVelocity: true,
-                ...options
-            });
+            remaining -= orbValue;
             
-            // Add some initial velocity for the burst effect
-            orb.vx = Math.cos(angle) * (1 + Math.random() * 2);
-            orb.vy = Math.sin(angle) * (1 + Math.random() * 2);
+            // Create the orb with random offset
+            const offsetX = (Math.random() - 0.5) * 40;
+            const offsetY = (Math.random() - 0.5) * 40;
             
-            orbs.push(orb);
+            const orb = this.createExpOrb(x + offsetX, y + offsetY, orbValue, options);
+            createdOrbs.push(orb);
+            
+            // If we've distributed all value, stop creating orbs
+            if (remaining <= 0) break;
         }
         
-        return orbs;
+        return createdOrbs;
     }
     
     /**
@@ -817,31 +1039,45 @@ class ExperienceOrbManager {
      * @param {number} deltaTime - Time elapsed since last update
      */
     update(deltaTime) {
-        const players = this.game.playerManager ? this.game.playerManager.getPlayers() : [];
+        // Get all players to check for magnetization
+        let players = [];
         
-        // Merge nearby orbs before updating them
-        // Try to use the mergeExperienceOrbs function if available
-        if (window.ExperienceOrbManager && window.ExperienceOrbManager.mergeExperienceOrbs) {
-            this.orbs = window.ExperienceOrbManager.mergeExperienceOrbs(this.orbs);
+        // Try to get players from game
+        if (this.game) {
+            if (this.game.myPlayer) {
+                players.push(this.game.myPlayer);
+            }
+            
+            // Also include other players if available
+            if (this.game.otherPlayers) {
+                players = players.concat(Object.values(this.game.otherPlayers));
+            }
         }
         
-        // Update all orbs
-        for (let i = this.orbs.length - 1; i >= 0; i--) {
-            const orb = this.orbs[i];
-            const shouldRemove = orb.update(deltaTime, players);
-            
-            // Remove if necessary
-            if (shouldRemove) {
-                this.orbs.splice(i, 1);
-                continue;
-            }
-            
-            // Check collision with current player
-            if (this.game.myPlayer && !orb.isCollected) {
-                if (orb.checkCollision(this.game.myPlayer)) {
-                    orb.collect(this.game.myPlayer);
+        // Update each orb
+        const orbsToRemove = [];
+        
+        for (const [id, orb] of this.orbs.entries()) {
+            try {
+                const shouldRemove = orb.update(deltaTime, players);
+                
+                if (shouldRemove) {
+                    orbsToRemove.push(id);
                 }
+            } catch (error) {
+                console.error(`Error updating experience orb: ${error.message}`);
+                orbsToRemove.push(id);
             }
+        }
+        
+        // Remove orbs that need to be removed
+        orbsToRemove.forEach(id => {
+            this.orbs.delete(id);
+        });
+        
+        // Check for merging similar orbs if enabled
+        if (this.options.mergeSimilarOrbs) {
+            this.mergeSimilarOrbs();
         }
     }
     
@@ -852,24 +1088,119 @@ class ExperienceOrbManager {
      * @param {number} cameraY - Camera Y position
      */
     draw(ctx, cameraX, cameraY) {
-        for (const orb of this.orbs) {
+        for (const orb of this.orbs.values()) {
             orb.draw(ctx, cameraX, cameraY);
         }
     }
     
     /**
      * Get all orbs
-     * @returns {Array} - Array of orbs
+     * @returns {Array} - Array of all orbs
      */
     getOrbs() {
-        return this.orbs;
+        return Array.from(this.orbs.values());
     }
     
     /**
      * Clear all orbs
      */
     clearAll() {
-        this.orbs = [];
+        this.orbs.clear();
+    }
+    
+    /**
+     * Enable or disable fuzzy particles for all orbs
+     * @param {boolean} enabled - Whether fuzzy particles should be enabled
+     */
+    setFuzzyParticlesEnabled(enabled) {
+        this.options.fuzzyParticlesEnabled = enabled;
+        
+        // Update all existing orbs
+        this.orbs.forEach(orb => {
+            orb.setFuzzyParticlesEnabled(enabled);
+        });
+        
+        // Save preference
+        if (window.localStorage) {
+            localStorage.setItem('fuzzyParticlesEnabled', enabled.toString());
+        }
+        
+        console.log(`Experience orb fuzzy particles ${enabled ? 'enabled' : 'disabled'}`);
+    }
+    
+    /**
+     * Merge similar orbs that are close to each other
+     */
+    mergeSimilarOrbs() {
+        // Get all orbs as an array
+        const orbsArray = Array.from(this.orbs.values());
+        
+        // Track orbs to remove
+        const orbsToRemove = new Set();
+        
+        for (let i = 0; i < orbsArray.length; i++) {
+            const orb1 = orbsArray[i];
+            
+            // Skip if this orb is already marked for removal or collected
+            if (orbsToRemove.has(orb1.id) || orb1.collected) continue;
+            
+            for (let j = i + 1; j < orbsArray.length; j++) {
+                const orb2 = orbsArray[j];
+                
+                // Skip if this orb is already marked for removal or collected
+                if (orbsToRemove.has(orb2.id) || orb2.collected) continue;
+                
+                // Check if orbs are of the same type
+                if (orb1.skillType === orb2.skillType) {
+                    // Check if orbs are close to each other
+                    const dx = orb1.x - orb2.x;
+                    const dy = orb1.y - orb2.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // If they're close, merge them
+                    if (distance < 15) {
+                        // Add second orb's value to first orb
+                        orb1.value += orb2.value;
+                        
+                        // Update size based on new value
+                        orb1.size = orb1.getSizeForValue(orb1.value);
+                        
+                        // Mark second orb for removal
+                        orbsToRemove.add(orb2.id);
+                    }
+                }
+            }
+        }
+        
+        // Remove orbs marked for removal
+        orbsToRemove.forEach(id => {
+            this.orbs.delete(id);
+        });
+    }
+    
+    /**
+     * Play sound when an orb is collected
+     * @param {number} amount - Experience amount
+     */
+    playCollectionSound(amount) {
+        try {
+            // Volume and pitch based on amount
+            const volume = Math.min(0.6, 0.3 + (amount / 100) * 0.3);
+            const pitch = Math.min(1.5, 0.8 + (amount / 100) * 0.7);
+            
+            // Try to use global sound manager if available
+            if (window.audioManager && window.audioManager.playSound) {
+                window.audioManager.playSound('exp_collect', volume, pitch);
+            } else {
+                // Fallback to basic Audio API
+                const sound = new Audio('./sounds/exp_collect.mp3');
+                sound.volume = volume;
+                sound.playbackRate = pitch;
+                sound.play().catch(err => console.log('Sound play failed:', err));
+            }
+        } catch (error) {
+            console.error("Error playing experience collect sound:", error);
+        }
     }
 }
 

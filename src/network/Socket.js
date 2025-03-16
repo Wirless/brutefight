@@ -88,6 +88,11 @@ class Socket {
         // World update events
         this.socket.on('worldUpdate', data => this.handleWorldUpdate(data));
         
+        // Experience orb events
+        this.socket.on('expOrbUpdate', data => this.handleExpOrbUpdate(data));
+        this.socket.on('expOrbCollected', data => this.handleExpOrbCollected(data));
+        this.socket.on('expOrbBurst', data => this.handleExpOrbBurst(data));
+        
         this.debug('Game event handlers set up');
     }
     
@@ -358,6 +363,51 @@ class Socket {
         // Forward to game
         if (this.game && this.game.handleWorldUpdate) {
             this.game.handleWorldUpdate(data);
+        }
+    }
+    
+    /**
+     * Handle experience orb update from server
+     * @param {Object} data - Experience orb data
+     */
+    handleExpOrbUpdate(data) {
+        this.debug('Experience orb update received:', data);
+        
+        // Forward to experience orb manager if available
+        if (this.game && this.game.expOrbManager) {
+            this.game.expOrbManager.handleOrbUpdate(data);
+        }
+    }
+    
+    /**
+     * Handle experience orb collected by another player
+     * @param {Object} data - Collection data
+     */
+    handleExpOrbCollected(data) {
+        this.debug('Experience orb collected:', data);
+        
+        // Forward to experience orb manager if available
+        if (this.game && this.game.expOrbManager) {
+            this.game.expOrbManager.handleOrbCollected(data);
+        }
+    }
+    
+    /**
+     * Handle experience orb burst from server
+     * @param {Object} data - Burst data
+     */
+    handleExpOrbBurst(data) {
+        this.debug('Experience orb burst received:', data);
+        
+        // Forward to experience orb manager if available
+        if (this.game && this.game.expOrbManager) {
+            this.game.expOrbManager.createExpOrbBurst(
+                data.x, 
+                data.y, 
+                data.totalValue, 
+                data.count, 
+                { skillType: data.skillType }
+            );
         }
     }
     
