@@ -226,6 +226,10 @@ class OreManager {
     isTooCloseToOtherOres(x, y) {
         for (let i = 0; i < this.ores.length; i++) {
             const ore = this.ores[i];
+            
+            // Skip broken ores when checking distances
+            if (ore.broken) continue;
+            
             const distance = Math.sqrt(
                 Math.pow(x - ore.x, 2) + 
                 Math.pow(y - ore.y, 2)
@@ -274,6 +278,10 @@ class OreManager {
     checkCollision(x, y, radius) {
         for (let i = 0; i < this.ores.length; i++) {
             const ore = this.ores[i];
+            
+            // Skip broken or invisible ores
+            if (!ore || ore.broken || ore.health <= 0 || ore.visible === false) continue;
+            
             const oreRadius = ore.radius || 20;
             
             const distance = Math.sqrt(
@@ -298,6 +306,10 @@ class OreManager {
     handlePlayerCollision(playerX, playerY, radius) {
         for (let i = 0; i < this.ores.length; i++) {
             const ore = this.ores[i];
+            
+            // Skip broken, depleted, or invisible ores
+            if (!ore || ore.broken || ore.health <= 0 || ore.visible === false) continue;
+            
             const oreRadius = ore.radius || 20;
             
             const dx = playerX - ore.x;
@@ -326,10 +338,29 @@ class OreManager {
      * @param {Object} ore - The ore to remove
      */
     removeOre(ore) {
+        // Find and remove the ore by ID
         const index = this.ores.findIndex(o => o.id === ore.id);
         if (index !== -1) {
             this.ores.splice(index, 1);
         }
+        
+        // Also clean up all possible references
+        if (window.hitRocks) {
+            window.hitRocks.delete(ore);
+        }
+        if (window.rockHitTimes) {
+            window.rockHitTimes.delete(ore);
+        }
+        
+        // Remove from global window.ores if it exists
+        if (window.ores && Array.isArray(window.ores)) {
+            const globalIndex = window.ores.findIndex(o => o.id === ore.id);
+            if (globalIndex !== -1) {
+                window.ores.splice(globalIndex, 1);
+            }
+        }
+        
+        console.log(`Completely removed ore ID ${ore.id} from the game world`);
     }
     
     /**
@@ -341,6 +372,9 @@ class OreManager {
     drawOres(ctx, cameraX, cameraY) {
         for (let i = 0; i < this.ores.length; i++) {
             const ore = this.ores[i];
+            
+            // Skip broken, depleted, or invisible ores
+            if (!ore || ore.broken || ore.health <= 0 || ore.visible === false) continue;
             
             // Calculate screen position
             const screenX = ore.x - cameraX;
@@ -401,10 +435,38 @@ class OreManager {
     }
     
     /**
+     * Clean up broken, depleted, or invisible ores
+     * This should be called periodically to clear any "ghost" ores
+     */
+    cleanupBrokenOres() {
+        // Count before
+        const beforeCount = this.ores.length;
+        
+        // Filter out broken ores
+        this.ores = this.ores.filter(ore => {
+            return ore && !ore.broken && ore.health > 0 && ore.visible !== false;
+        });
+        
+        // Log how many were removed
+        const removedCount = beforeCount - this.ores.length;
+        if (removedCount > 0) {
+            console.log(`Cleaned up ${removedCount} broken ores`);
+        }
+    }
+    
+    /**
      * Update all ores
      * @param {number} deltaTime - Time elapsed since last update
      */
     update(deltaTime) {
+        // Clean up broken ores every 5 seconds
+        if (!this._lastCleanupTime) {
+            this._lastCleanupTime = Date.now();
+        } else if (Date.now() - this._lastCleanupTime > 5000) {
+            this.cleanupBrokenOres();
+            this._lastCleanupTime = Date.now();
+        }
+        
         // Update each ore
         for (let i = 0; i < this.ores.length; i++) {
             const ore = this.ores[i];
@@ -445,8 +507,8 @@ class OreManager {
         for (let i = 0; i < this.ores.length; i++) {
             const ore = this.ores[i];
             
-            // Skip if ore has no health (already broken)
-            if (ore.health === 0) continue;
+            // Skip broken, depleted or invisible ores
+            if (!ore || ore.broken || ore.health <= 0 || ore.visible === false) continue;
             
             // Calculate distance
             const dx = ore.x - x;
@@ -481,6 +543,7 @@ class OreManager {
                 closestOre.health -= damage;
                 if (closestOre.health <= 0) {
                     closestOre.health = 0;
+                    closestOre.broken = true; // Mark as broken if using the fallback method
                 }
                 return closestOre;
             }

@@ -224,7 +224,15 @@ function doesHitTree(attackX, attackY, tree) {
  * @returns {boolean} - True if the ore is hit
  */
 function doesHitRock(attackX, attackY, ore, range, angleWidth, direction) {
-    if (!ore || ore.broken) return false;
+    // Comprehensive validation - each check is separate for clarity
+    if (!ore) return false;  
+    if (ore.broken) return false;
+    if (ore.health <= 0) return false; 
+    if (ore.visible === false) return false;
+    if (ore.radius <= 0) return false; // Check radius is valid
+    
+    // Additional safety check for any "destroyed" ores
+    if (typeof ore.hit !== 'function') return false;
     
     // Calculate distance from ore to attack point
     const dx = ore.x - attackX;
@@ -1238,6 +1246,7 @@ class AxeAttack extends Attack {
                         closestOre.health -= damage;
                         if (closestOre.health <= 0) {
                             closestOre.health = 0;
+                            closestOre.broken = true; // Mark as broken when destroyed
                             oreDestroyed = true;
                         }
                     }
@@ -1276,13 +1285,17 @@ class FistAttack extends Attack {
     constructor(player, ctx) {
         super(player, ctx);
         this.maxCooldown = 50; // Extremely low cooldown (50ms) to allow for much faster clicking
-        this.range = 40; // Updated to 40 pixels as requested
+        this.range = 25; // Base range of 25 pixels (was 40)
+        this.baseRange = 25; // Store base range
         this.arcWidth = 55 * (Math.PI / 180); // 55 degrees in radians
         this.hitChecked = false;
         this.lastClickTime = Date.now();
         this.clicksPerSecond = 0;
         this.clickCount = 0;
         this.clickTimeWindow = [];
+        this.hitTargets = new Set(); // Track targets already hit in this attack
+        this.comboCount = 0; // Counter for combo attacks
+        this.comboTimeout = 1000; // Time window for combos in ms
         
         // Initialize skills system integration
         if (!this.player.skills) {
@@ -1353,10 +1366,10 @@ class FistAttack extends Attack {
         
         // Apply specific damage for rocks and trees as requested
         if (targetType === 'rock') {
-            // For rocks: 1 + strength + (fist skill / 2) damage
-            const fistBonus = Math.floor(fistLevel / 2);
-            console.log(`Fist damage calculation - Strength: ${strength}, Fist level: ${fistLevel}, Fist bonus: ${fistBonus}`);
-            return 1 + (strength || 1) + fistBonus;
+            // For rocks: fistSkill + (strength / 2) damage as requested
+            const strengthBonus = Math.floor((strength || 1) / 2);
+            console.log(`Fist damage calculation - Fist level: ${fistLevel}, Strength: ${strength}, Strength bonus: ${strengthBonus}`);
+            return fistLevel + strengthBonus;
         } else if (targetType === 'tree') {
             // For trees: 2 + strength damage
             return 2 + (strength || 1);
@@ -1518,6 +1531,9 @@ class FistAttack extends Attack {
         }
         
         if (super.start(direction)) {
+            // Clear hit targets set for new attack
+            this.hitTargets.clear();
+            
             // Record this click for clicks per second calculation
             this.clickTimeWindow.push(Date.now());
             this.hitChecked = false;
@@ -1525,7 +1541,28 @@ class FistAttack extends Attack {
             // Calculate time between clicks
             const now = Date.now();
             const timeBetweenClicks = now - this.lastClickTime;
+            
+            // Update combo count based on click timing
+            if (timeBetweenClicks < this.comboTimeout) {
+                // Consecutive click within combo timeout
+                this.comboCount++;
+                console.log(`Fist combo: ${this.comboCount}`);
+            } else {
+                // Reset combo if too much time has passed
+                this.comboCount = 0;
+            }
             this.lastClickTime = now;
+            
+            // Increase range based on combo (5 pixels per combo hit, max 50 bonus)
+            const rangeBonus = Math.min(50, this.comboCount * 5);
+            this.range = this.baseRange + rangeBonus;
+            
+            // Increase arc width with combo (2 degrees per combo hit, max 45 extra degrees)
+            const maxArcBonus = 45 * (Math.PI / 180);
+            const arcBonus = Math.min(maxArcBonus, this.comboCount * (Math.PI / 90));
+            this.arcWidth = (55 * (Math.PI / 180)) + arcBonus;
+            
+            console.log(`Fist attack with range: ${this.range}px, arc: ${this.arcWidth * (180/Math.PI)}°`);
             
             // Further reduce cooldown based on rapid clicking
             if (timeBetweenClicks < 300) {
@@ -1610,13 +1647,18 @@ class FistAttack extends Attack {
     checkHits() {
         if (!this.player || !this.isActive) return [];
         
+        // Clean up any broken ores before checking hits
+        if (typeof cleanupBrokenRocks === 'function') {
+            cleanupBrokenRocks();
+        }
+        
         const hits = [];
         const player = this.player;
         const punchX = player.x + Math.cos(this.direction) * this.range;
         const punchY = player.y + Math.sin(this.direction) * this.range;
         
-        // Play hit sound on any attack regardless of hit
-        this.playHitSound();
+        // Don't play hit sound automatically - only play when we actually hit something
+        // We'll play it below when we hit an ore or tree
         
         // Get ores from all possible sources
         let ores = [];
@@ -1631,18 +1673,19 @@ class FistAttack extends Attack {
         }
         
         // Debug info
-        console.log(`Checking fist hits against ${ores.length} ores`);
+        console.log(`Checking fist hits against ${ores.length} ores with range ${this.range}px`);
         
-        // Check collision with rocks
+        // Check collision with rocks - hit ALL ores in range instead of just closest
         for (const ore of ores) {
-            // Skip if ore is not visible or broken
-            if (!ore || ore.broken || (ore.visible === false)) continue;
+            // Skip if ore is not visible or broken or already hit in this attack
+            if (!ore || ore.broken || (ore.visible === false) || this.hitTargets.has(ore.id)) continue;
             
             // Use the helper function to check if the punch hits the ore
             if (doesHitRock(punchX, punchY, ore, this.range, this.arcWidth, this.direction)) {
                 console.log(`Ore hit with fist at (${ore.x}, ${ore.y})`);
                 
-                // Calculate damage: 1 + strength + (fist skill / 2) for rocks
+                // Calculate damage based on player stats: fistSkill level + (strength/2)
+                const fistSkillLevel = this.player.skills.fist.level || 1;
                 const damage = this.calculateDamage(1, 1, player.strength || 1, 'rock');
                 
                 console.log(`Applying ${damage} damage to ore with health: ${ore.health || 100}`);
@@ -1656,9 +1699,13 @@ class FistAttack extends Attack {
                     ore.health = (ore.health || 100) - damage;
                     if (ore.health <= 0) {
                         ore.health = 0;
+                        ore.broken = true; // Mark as broken when destroyed
                         oreDestroyed = true;
                     }
                 }
+                
+                // Mark this ore as hit in this attack
+                this.hitTargets.add(ore.id);
                 
                 // Increase fist skill on successful hit
                 this.increaseFistSkill(ore, damage);
@@ -1707,7 +1754,7 @@ class FistAttack extends Attack {
             }
         }
         
-        // Check collision with trees
+        // Check collision with trees - process as before
         const trees = [];
         
         // Try different ways to access trees, using whatever method might be available
@@ -1719,12 +1766,18 @@ class FistAttack extends Attack {
             trees.push(...window.treeManager.trees);
         }
         
-        // Process tree hits
+        // Process tree hits - only hit trees not already hit in this attack
         if (trees.length > 0) {
             for (const tree of trees) {
+                // Skip if tree is already hit in this attack
+                if (!tree || this.hitTargets.has(tree.id)) continue;
+                
                 // Use the helper function to check if the punch hits the tree
                 if (doesHitTree(punchX, punchY, tree)) {
                     console.log("Tree hit detected with square hitbox!");
+                    
+                    // Mark tree as hit
+                    this.hitTargets.add(tree.id);
                     
                     // Calculate damage: 2 + strength for trees
                     const damage = this.calculateDamage(2, 2, player.strength || 1, 'tree');
@@ -2023,3 +2076,59 @@ window.FistAttack = FistAttack;
 // Export as default and named exports
 export { Attack, PickaxeAttack, AxeAttack, FistAttack };
 export default Attacks; 
+
+/**
+ * Clean up broken ores from the hit tracking sets
+ * This prevents visual effects from applying to broken ores
+ */
+function cleanupBrokenRocks() {
+    // Clean up the hitRocks set - remove any broken ores
+    if (window.hitRocks) {
+        const hitRocksArray = [...window.hitRocks];
+        for (const rock of hitRocksArray) {
+            // More comprehensive validation for dead ores
+            if (!rock || 
+                rock.broken || 
+                rock.health <= 0 || 
+                rock.visible === false || 
+                rock.radius <= 0 ||
+                typeof rock.hit !== 'function') {
+                
+                // Remove from tracking
+                window.hitRocks.delete(rock);
+                if (window.rockHitTimes) {
+                    window.rockHitTimes.delete(rock);
+                }
+                
+                console.log('Cleaned up invalid rock from hit tracking');
+            }
+        }
+    }
+    
+    // Also clean up tree hit tracking if it exists
+    if (window.hitTrees) {
+        const hitTreesArray = [...window.hitTrees];
+        for (const tree of hitTreesArray) {
+            if (!tree || tree.broken || tree.health <= 0 || tree.visible === false) {
+                window.hitTrees.delete(tree);
+                if (window.treeHitTimes) {
+                    window.treeHitTimes.delete(tree);
+                }
+            }
+        }
+    }
+}
+
+// Call this function periodically to keep things clean
+if (typeof window !== 'undefined') {
+    // Run more frequently (every 2 seconds instead of 5)
+    setInterval(cleanupBrokenRocks, 2000);
+    
+    // Also run immediately
+    setTimeout(cleanupBrokenRocks, 100);
+    
+    // Run whenever hitting happens - add to click events
+    window.addEventListener('mousedown', () => {
+        setTimeout(cleanupBrokenRocks, 50);
+    });
+}

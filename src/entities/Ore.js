@@ -425,8 +425,8 @@ class Ore {
      * @returns {boolean} - Whether the ore was destroyed
      */
     hit(damage, source) {
-        // If already broken, can't be hit
-        if (this.broken) return false;
+        // If broken or invalid, cannot be hit
+        if (this.broken || this.health <= 0 || this.visible === false) return false;
         
         console.log(`Ore hit! Type: ${this.type}, Health: ${this.health}/${this.maxHealth}, Damage: ${damage}`);
         
@@ -472,6 +472,9 @@ class Ore {
         // Apply damage
         this.health -= damage;
         
+        // Create damage number display
+        this.createDamageNumber(damage);
+        
         // Check if destroyed
         if (this.health <= 0) {
             this.health = 0;
@@ -486,8 +489,11 @@ class Ore {
      * Break the ore
      */
     break() {
-        this.broken = true;
+        // Create particles before destroying
         this.generateParticles(true);
+        
+        // Destroy completely
+        this.destroy();
         
         // Schedule respawn
         setTimeout(() => {
@@ -499,8 +505,16 @@ class Ore {
      * Respawn the ore
      */
     respawn() {
+        // Restore health and visibility
         this.health = this.maxHealth;
         this.broken = false;
+        this.visible = true;
+        
+        // Restore original methods if they were nullified
+        this.containsPoint = Ore.prototype.containsPoint;
+        this.distanceTo = Ore.prototype.distanceTo;
+        this.hit = Ore.prototype.hit;
+        this.takeDamage = Ore.prototype.takeDamage;
     }
     
     /**
@@ -541,7 +555,8 @@ class Ore {
      * @returns {boolean} - Whether the point is inside
      */
     containsPoint(x, y) {
-        if (this.broken) return false;
+        // Always return false for broken or depleted ores
+        if (this.broken || this.health <= 0 || this.visible === false) return false;
         
         const dx = this.x - x;
         const dy = this.y - y;
@@ -573,6 +588,98 @@ class Ore {
             minY: this.y - this.radius,
             maxY: this.y + this.radius
         };
+    }
+    
+    /**
+     * Create a floating damage number
+     * @param {number} damage - Amount of damage dealt
+     */
+    createDamageNumber(damage) {
+        // Only create if we have a global particles system or game reference
+        if (!window.game || (!window.particleManager && !window.rockParticles)) return;
+        
+        // Create a "floating" damage number that rises up
+        const damageText = {
+            x: this.x,
+            y: this.y - this.radius,
+            text: `-${damage}`,  // Simple damage display
+            color: damage >= 10 ? '#ff4500' : 'red', // Brighter color for higher damage
+            size: 14 + Math.min(damage, 10), // Larger text for more damage
+            opacity: 1,
+            lifetime: 1500,
+            created: Date.now(),
+            vy: -1, // Move upward
+            vx: (Math.random() - 0.5) * 0.5 // Slight random horizontal movement
+        };
+        
+        // Add to global particles if possible
+        if (window.particleManager && window.particleManager.addTextParticle) {
+            window.particleManager.addTextParticle(damageText);
+        } else if (window.game) {
+            // Fall back to custom rendering if game reference exists
+            if (!window.game.textParticles) window.game.textParticles = [];
+            window.game.textParticles.push(damageText);
+        }
+    }
+    
+    /**
+     * Completely destroy the ore, making it non-interactable in every way
+     * This is a more thorough approach than just marking it as broken
+     */
+    destroy() {
+        // Set all properties that might cause interaction to values that prevent it
+        this.broken = true;
+        this.health = -999; // Extremely negative so no health checks can pass
+        this.visible = false;
+        this.radius = 0; // No collision possible
+        
+        // Completely redefine all these methods to ensure they can't be hit
+        // These methods are implemented as arrow functions that can't be restored by mistake
+        
+        // Prevent all types of interaction
+        this.hit = () => false;
+        this.takeDamage = () => false;
+        this.containsPoint = () => false;
+        this.distanceTo = () => 9999;
+        this.draw = () => {}; // Empty draw function
+        this.drawHitEffect = () => {}; // Prevent hit effects
+        this.generateParticles = () => []; // No particles
+        this.drawOreBody = () => {}; // No drawing at all
+        this.createDamageNumber = () => {}; // No damage numbers
+        this.onHit = () => {}; // No hit effects
+        this.getBounds = () => { return { minX: 0, maxX: 0, minY: 0, maxY: 0 }; }; // Empty bounds
+        
+        // Add method to identify destroyed ores
+        this.isDestroyed = () => true;
+        
+        // Remove from ALL possible tracking systems
+        if (window.hitRocks) {
+            window.hitRocks.delete(this);
+        }
+        if (window.rockHitTimes) {
+            window.rockHitTimes.delete(this);
+        }
+        
+        // Nullify all event-related properties
+        this.lastHitTime = 0;
+        
+        // Call global cleanup functions if they exist
+        if (typeof window.cleanupBrokenRocks === 'function') {
+            window.cleanupBrokenRocks();
+        }
+        
+        // Force clear from global arrays
+        if (window.ores && Array.isArray(window.ores)) {
+            const index = window.ores.findIndex(o => o === this || o.id === this.id);
+            if (index !== -1) {
+                window.ores.splice(index, 1);
+            }
+        }
+        
+        // If OreManager exists, request removal from the array immediately
+        if (window.oreManager) {
+            window.oreManager.removeOre(this);
+        }
     }
 }
 
